@@ -83,6 +83,24 @@ SEM_PORTAL_EXTERNO = {
 }
 
 
+# ── PRÉ-FILTRO DE OBJETIVO ────────────────────────────────────────────────────
+
+# Processos cujo objetivo é serviço, não compra de pneu — descartar antes do detalhe
+_OBJ_SERVICE = [
+    re.compile(r'presta[çc][aã]o\s+de\s+servi[çc]', re.I),
+    re.compile(r'\bservi[çc]os?\s+de\s+(?:borracharia|recauchutagem|vulcaniza|substitui)', re.I),
+    re.compile(r'loca[çc][aã]o\s+de\s+(?:trator|m[áa]quina|equipamento)', re.I),
+]
+
+
+def is_tire_purchase(description: str) -> bool:
+    """False se o objetivo é claramente serviço e não compra de pneu."""
+    for pat in _OBJ_SERVICE:
+        if pat.search(description or ""):
+            return False
+    return True
+
+
 # ── CLASSIFICAÇÃO DE ITENS ─────────────────────────────────────────────────────
 
 # Padrões que identificam pneus automotivos/industriais reais
@@ -277,6 +295,7 @@ def enrich(items: list[dict]) -> list[dict]:
             if detail:
                 item["usuarioNome"]        = detail.get("usuarioNome", "")
                 item["valorTotalEstimado"] = detail.get("valorTotalEstimado")
+                item["srp"]                = detail.get("srp", False)
                 item["portal"]             = resolve_portal(item["usuarioNome"])
             else:
                 item["portal"] = resolve_portal("")
@@ -392,16 +411,25 @@ def _items_subrow(tire_items: list[dict]) -> str:
     </tr>"""
 
 
+def _tipo_cell(item: dict) -> str:
+    modal = "Pregão" if item.get("modalidade_licitacao_id") == "6" else "Dispensa"
+    if item.get("srp"):
+        srp_line = '<br><span style="color:#1a6bb5;font-size:11px;">Registro de preço</span>'
+    else:
+        srp_line = '<br><span style="color:#888;font-size:11px;">Compra direta</span>'
+    return f"{modal}{srp_line}"
+
+
 def _process_row(item: dict, bg: str) -> str:
     orgao   = item.get("orgao_nome", "")[:35]
     uf      = item.get("uf", "")
     objeto  = clean_objeto(item.get("description", ""))
-    modal   = "Pregão" if item.get("modalidade_licitacao_id") == "6" else "Dispensa"
     prazo   = fmt_date_short(item.get("data_fim_vigencia", ""))
     valor   = fmt_valor(item.get("valor_pneus") or item.get("valorTotalEstimado"))
     link    = build_link(item)
     portal  = item.get("portal", "")
     sem_ext = portal in SEM_PORTAL_EXTERNO
+    tipo    = _tipo_cell(item)
 
     aviso = ""
     if sem_ext:
@@ -413,7 +441,7 @@ def _process_row(item: dict, bg: str) -> str:
         <strong>{orgao}/{uf}</strong>{aviso}<br>
         <span style="color:#555;font-size:12px;">{objeto}</span>
       </td>
-      <td style="padding:10px 8px;font-size:12px;color:#555;white-space:nowrap;vertical-align:top;">{modal}</td>
+      <td style="padding:10px 8px;font-size:12px;color:#555;white-space:nowrap;vertical-align:top;">{tipo}</td>
       <td style="padding:10px 8px;font-size:12px;color:#555;white-space:nowrap;vertical-align:top;">{prazo}</td>
       <td style="padding:10px 8px;font-size:13px;color:#27ae60;white-space:nowrap;vertical-align:top;font-weight:bold;">{valor}</td>
       <td style="padding:10px 8px;vertical-align:top;">
@@ -426,11 +454,11 @@ def _process_row(item: dict, bg: str) -> str:
 def _urgency_row(item: dict, bg: str) -> str:
     orgao   = item.get("orgao_nome", "")[:35]
     uf      = item.get("uf", "")
-    modal   = "Pregão" if item.get("modalidade_licitacao_id") == "6" else "Dispensa"
     portal  = item.get("portal", "")
     prazo   = fmt_date(item.get("data_fim_vigencia", ""))
     valor   = fmt_valor(item.get("valor_pneus") or item.get("valorTotalEstimado"))
     link    = build_link(item)
+    tipo    = _tipo_cell(item)
     d       = days_until(item.get("data_fim_vigencia", ""))
     urgency = "HOJE" if d == 0 else "AMANHÃ" if d == 1 else f"em {d}d"
     color   = "#c0392b" if d == 0 else "#e67e22" if d == 1 else "#f39c12"
@@ -442,7 +470,7 @@ def _urgency_row(item: dict, bg: str) -> str:
       </td>
       <td style="padding:10px 8px;font-size:13px;color:#2c3e50;">{portal}</td>
       <td style="padding:10px 8px;font-size:13px;color:#2c3e50;">{orgao}/{uf}</td>
-      <td style="padding:10px 8px;font-size:12px;color:#555;white-space:nowrap;">{modal}</td>
+      <td style="padding:10px 8px;font-size:12px;color:#555;white-space:nowrap;">{tipo}</td>
       <td style="padding:10px 8px;font-size:12px;color:#555;white-space:nowrap;">{prazo}</td>
       <td style="padding:10px 8px;font-size:13px;color:#27ae60;font-weight:bold;">{valor}</td>
       <td style="padding:10px 8px;">
@@ -599,7 +627,12 @@ def main() -> None:
 
     print(f"Total abertos: {len(all_items)}")
 
-    # 2. Filtra
+    # 2. Pré-filtro: descarta serviços e não-compras antes de buscar detalhes
+    n_before = len(all_items)
+    all_items = [i for i in all_items if is_tire_purchase(i.get("description", ""))]
+    print(f"Pré-filtro objetivo: {n_before} → {len(all_items)} processos")
+
+    # 3. Filtra por data
     yesterday_items = filter_published_yesterday(all_items)
     expiring_items  = filter_expiring_soon(all_items, days=2)
 
@@ -614,7 +647,7 @@ def main() -> None:
         print("Nenhum processo encontrado. Email não enviado.")
         return
 
-    # 3. Enriquece com usuarioNome + valorTotalEstimado
+    # 4. Enriquece com portal, srp, valorTotalEstimado e itens de pneu
     to_enrich = yesterday_items + expiring_items
     print(f"Buscando detalhes de {len(to_enrich)} processos...")
     enriched  = enrich(to_enrich)
