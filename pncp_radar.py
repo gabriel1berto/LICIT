@@ -31,9 +31,17 @@ BRT = timezone(timedelta(hours=-3))
 
 MODALIDADES = [6, 8]  # 6 = Pregão Eletrônico, 8 = Dispensa
 
-SLEEP_BETWEEN_DETAIL = 0.5   # segundos entre chamadas ao endpoint de detalhe
-SLEEP_BETWEEN_PAGES  = 0.3   # segundos entre páginas da busca
+SLEEP_BETWEEN_DETAIL = 0.6   # segundos entre chamadas ao endpoint de detalhe
+SLEEP_BETWEEN_PAGES  = 0.8   # segundos entre páginas da busca
 TAM_PAGINA           = 50
+MAX_RETRIES          = 4     # tentativas por request
+
+HEADERS = {
+    "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept":          "application/json, text/plain, */*",
+    "Accept-Language": "pt-BR,pt;q=0.9",
+    "Referer":         "https://pncp.gov.br/",
+}
 
 PORTAL_MAP = {
     "compras.gov":         "Compras.gov.br",
@@ -130,20 +138,35 @@ def days_until(s: str) -> int | None:
 
 # ── FETCH ──────────────────────────────────────────────────────────────────────
 
+def _get_with_retry(url: str, params: dict | None = None) -> requests.Response | None:
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            r = requests.get(url, params=params, headers=HEADERS, timeout=30)
+            if r.status_code == 429:
+                wait = 5 * attempt
+                print(f"  rate limit — aguardando {wait}s (tentativa {attempt})")
+                time.sleep(wait)
+                continue
+            return r
+        except (requests.ConnectionError, requests.Timeout) as e:
+            wait = 3 * attempt
+            print(f"  conexão falhou ({e.__class__.__name__}) — aguardando {wait}s (tentativa {attempt})")
+            time.sleep(wait)
+    return None
+
+
 def fetch_search_page(modalidade: int, pagina: int) -> dict:
-    r = requests.get(
-        PNCP_SEARCH,
-        params={
-            "q":              "pneu",
-            "tipos_documento": "edital",
-            "ordenacao":      "-data",
-            "pagina":         pagina,
-            "tam_pagina":     TAM_PAGINA,
-            "status":         "recebendo_proposta",
-            "modalidades":    modalidade,
-        },
-        timeout=30,
-    )
+    r = _get_with_retry(PNCP_SEARCH, params={
+        "q":               "pneu",
+        "tipos_documento": "edital",
+        "ordenacao":       "-data",
+        "pagina":          pagina,
+        "tam_pagina":      TAM_PAGINA,
+        "status":          "recebendo_proposta",
+        "modalidades":     modalidade,
+    })
+    if r is None:
+        raise RuntimeError(f"Falha ao buscar página {pagina} modalidade {modalidade}")
     r.raise_for_status()
     return r.json()
 
@@ -152,9 +175,9 @@ def collect_all_open(modalidade: int) -> list[dict]:
     all_items: list[dict] = []
     pagina = 1
     while True:
-        data    = fetch_search_page(modalidade, pagina)
-        items   = data.get("items", [])
-        total   = data.get("total", 0)
+        data  = fetch_search_page(modalidade, pagina)
+        items = data.get("items", [])
+        total = data.get("total", 0)
         all_items.extend(items)
         print(f"  modalidade={modalidade} pág={pagina} ({len(all_items)}/{total})")
         if not items or len(all_items) >= total:
@@ -166,13 +189,10 @@ def collect_all_open(modalidade: int) -> list[dict]:
 
 def fetch_detail(cnpj: str, ano: str, seq: str) -> dict | None:
     url = PNCP_DETAIL.format(cnpj=cnpj, ano=ano, seq=seq)
-    try:
-        r = requests.get(url, timeout=30)
-        if r.status_code == 200:
-            return r.json()
-        return None
-    except Exception:
-        return None
+    r   = _get_with_retry(url)
+    if r is not None and r.status_code == 200:
+        return r.json()
+    return None
 
 
 def enrich(items: list[dict]) -> list[dict]:
