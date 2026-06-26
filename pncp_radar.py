@@ -103,15 +103,10 @@ def is_tire_purchase(description: str) -> bool:
 
 # ── CLASSIFICAÇÃO DE ITENS ─────────────────────────────────────────────────────
 
-# Padrões que identificam pneus automotivos/industriais reais
+# Padrões que identificam pneus mesmo sem a palavra "pneu" na descrição
 _TIRE_POSITIVE = [
-    re.compile(r'\d{3}/\d{2}\s*[Rr]\s*\d{2}'),                   # 205/75 R16
-    re.compile(r'\d{1,3}[.,]\d{2}\s*[-–]\s*\d{2}'),              # 7.50-16 (agrícola/industrial)
-    re.compile(r'\baro\s+\d{2}\b', re.I),                         # aro 16
-    re.compile(r'\b(radial|diagonal|borrachudo|recapado|recauchutado|recapagem)\b', re.I),
-    re.compile(r'\bcâmara\s+de\s+ar\b', re.I),                    # câmara de ar (válvula)
-    re.compile(r'\bpneu\b.{0,40}\b(ve[ií]culo|caminh|trator|moto|ônibus|pick.?up|van|suv)\b', re.I),
-    re.compile(r'\b(ve[ií]culo|caminh|trator|moto|ônibus|pick.?up|van|suv)\b.{0,40}\bpneu\b', re.I),
+    re.compile(r'\d{3}/\d{2}\s*[Rr]\s*\d{2}'),   # medida: 205/75 R16
+    re.compile(r'\bcâmara\s+de\s+ar\b', re.I),    # câmara de ar
 ]
 
 # Padrões que descartam o item (pneu aparece mas NÃO é um pneu)
