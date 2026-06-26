@@ -25,6 +25,7 @@ import requests
 
 PNCP_SEARCH  = "https://pncp.gov.br/api/search/"
 PNCP_DETAIL  = "https://pncp.gov.br/api/consulta/v1/orgaos/{cnpj}/compras/{ano}/{seq}"
+PNCP_ITEMS   = "https://pncp.gov.br/api/consulta/v1/orgaos/{cnpj}/compras/{ano}/{seq}/itens"
 PNCP_APP_URL = "https://pncp.gov.br/app/editais/{cnpj}/{ano}/{seq}"
 
 BRT = timezone(timedelta(hours=-3))
@@ -80,6 +81,44 @@ SEM_PORTAL_EXTERNO = {
     "Abase Sistemas", "IPM Sistemas", "Agili", "Novoserv",
     "Libre Soluções", "PROCERGS",
 }
+
+
+# ── CLASSIFICAÇÃO DE ITENS ─────────────────────────────────────────────────────
+
+# Padrões que identificam pneus automotivos/industriais reais
+_TIRE_POSITIVE = [
+    re.compile(r'\d{3}/\d{2}\s*[Rr]\s*\d{2}'),                   # 205/75 R16
+    re.compile(r'\d{1,3}[.,]\d{2}\s*[-–]\s*\d{2}'),              # 7.50-16 (agrícola/industrial)
+    re.compile(r'\baro\s+\d{2}\b', re.I),                         # aro 16
+    re.compile(r'\b(radial|diagonal|borrachudo|recapado|recauchutado|recapagem)\b', re.I),
+    re.compile(r'\bcâmara\s+de\s+ar\b', re.I),                    # câmara de ar (válvula)
+    re.compile(r'\bpneu\b.{0,40}\b(ve[ií]culo|caminh|trator|moto|ônibus|pick.?up|van|suv)\b', re.I),
+    re.compile(r'\b(ve[ií]culo|caminh|trator|moto|ônibus|pick.?up|van|suv)\b.{0,40}\bpneu\b', re.I),
+]
+
+# Padrões que descartam o item (pneu aparece mas NÃO é um pneu)
+_TIRE_NEGATIVE = [
+    re.compile(r'carrinho\s+de\s+m[aã]o', re.I),
+    re.compile(r'carro\s+de\s+m[aã]o', re.I),
+    re.compile(r'\bcarriola\b', re.I),
+    re.compile(r'\bmaca\b', re.I),
+    re.compile(r'cadeira\s+de\s+rodas', re.I),
+    re.compile(r'\bbrinquedo\b', re.I),
+]
+
+
+def is_tire_item(desc: str) -> bool:
+    """True se o item é um pneu ou câmara de ar automotivo/industrial legítimo."""
+    if not desc:
+        return False
+    for pat in _TIRE_NEGATIVE:
+        if pat.search(desc):
+            return False
+    for pat in _TIRE_POSITIVE:
+        if pat.search(desc):
+            return True
+    # Tem "pneu" mas sem sinal claro → inclui (conservador)
+    return "pneu" in desc.lower()
 
 
 # ── HELPERS ────────────────────────────────────────────────────────────────────
@@ -215,12 +254,25 @@ def fetch_detail(cnpj: str, ano: str, seq: str) -> dict | None:
     return None
 
 
+def fetch_tire_items(cnpj: str, ano: str, seq: str) -> list[dict] | None:
+    """Retorna os itens de pneu do processo, ou None em caso de falha na API."""
+    url = PNCP_ITEMS.format(cnpj=cnpj, ano=ano, seq=seq)
+    r   = _get_with_retry(url, params={"pagina": 1, "tamanhoPagina": 500})
+    if r is None or r.status_code != 200:
+        return None
+    all_items = r.json().get("data", [])
+    return [it for it in all_items if is_tire_item(it.get("descricao", ""))]
+
+
 def enrich(items: list[dict]) -> list[dict]:
+    result: list[dict] = []
     for i, item in enumerate(items, 1):
         cnpj = item.get("orgao_cnpj", "")
         ano  = item.get("ano", "")
         seq  = item.get("numero_sequencial", "")
+
         if cnpj and ano and seq:
+            # 1. Detalhe → portal + valorTotalEstimado
             detail = fetch_detail(cnpj, ano, seq)
             if detail:
                 item["usuarioNome"]        = detail.get("usuarioNome", "")
@@ -228,9 +280,30 @@ def enrich(items: list[dict]) -> list[dict]:
                 item["portal"]             = resolve_portal(item["usuarioNome"])
             else:
                 item["portal"] = resolve_portal("")
-        print(f"  detalhe {i}/{len(items)}: {item.get('portal','?')} — {item.get('orgao_nome','')[:40]}")
-        time.sleep(SLEEP_BETWEEN_DETAIL)
-    return items
+            time.sleep(SLEEP_BETWEEN_DETAIL)
+
+            # 2. Itens → filtra falsos positivos
+            tire_items = fetch_tire_items(cnpj, ano, seq)
+            time.sleep(SLEEP_BETWEEN_DETAIL)
+        else:
+            item["portal"] = resolve_portal("")
+            tire_items = None
+
+        # tire_items = None → API falhou, mantém por cautela
+        # tire_items = []   → sem pneu real, descarta
+        if tire_items is not None and len(tire_items) == 0:
+            print(f"  {i}/{len(items)}: DESCARTADO (falso positivo) — {item.get('orgao_nome','')[:45]}")
+            continue
+
+        item["tire_items"]  = tire_items or []
+        item["valor_pneus"] = sum(t.get("valorTotal") or 0 for t in item["tire_items"])
+
+        n = len(item["tire_items"])
+        v = fmt_valor(item["valor_pneus"]) if item["valor_pneus"] else "—"
+        print(f"  {i}/{len(items)}: {item.get('portal','?')} — {item.get('orgao_nome','')[:38]} — {n} item(ns) · {v}")
+        result.append(item)
+
+    return result
 
 
 # ── FILTROS ────────────────────────────────────────────────────────────────────
@@ -273,13 +346,59 @@ def group_by_portal(items: list[dict]) -> dict[str, list[dict]]:
 _ROW_ODD  = "#ffffff"
 _ROW_EVEN = "#f8f9fb"
 
+def _brl(v) -> str:
+    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _items_subrow(tire_items: list[dict]) -> str:
+    if not tire_items:
+        return ""
+    total    = sum(it.get("valorTotal") or 0 for it in tire_items)
+    show     = tire_items[:8]
+    overflow = len(tire_items) - len(show)
+
+    rows_html = ""
+    for it in show:
+        desc  = (it.get("descricao") or "")[:80]
+        qty   = it.get("quantidade") or 0
+        un    = (it.get("unidadeMedida") or "UN").upper()
+        v_un  = it.get("valorUnitarioEstimado") or 0
+        v_tot = it.get("valorTotal") or 0
+        rows_html += f"""
+          <tr>
+            <td style="padding:2px 12px 2px 20px;font-size:11px;color:#444;border-bottom:1px solid #e8f0e8;">{desc}</td>
+            <td style="padding:2px 8px;font-size:11px;color:#777;white-space:nowrap;text-align:right;border-bottom:1px solid #e8f0e8;">{qty} {un}</td>
+            <td style="padding:2px 8px;font-size:11px;color:#777;white-space:nowrap;text-align:right;border-bottom:1px solid #e8f0e8;">{_brl(v_un)}</td>
+            <td style="padding:2px 8px;font-size:11px;color:#27ae60;font-weight:bold;white-space:nowrap;text-align:right;border-bottom:1px solid #e8f0e8;">{_brl(v_tot)}</td>
+          </tr>"""
+
+    more_html = ""
+    if overflow > 0:
+        more_html = f'<tr><td colspan="4" style="padding:3px 12px 4px 20px;font-size:11px;color:#aaa;">+ {overflow} itens omitidos</td></tr>'
+
+    return f"""
+    <tr style="background:#f4faf4;">
+      <td colspan="5" style="padding:0;border-bottom:1px solid #dde;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr style="background:#e6f4e6;">
+            <td colspan="4" style="padding:5px 12px 5px 20px;font-size:11px;font-weight:bold;color:#2e7d32;">
+              🔧 {len(tire_items)} item{'ns' if len(tire_items)>1 else ''} de pneu &nbsp;·&nbsp; <strong>{_brl(total)}</strong>
+            </td>
+          </tr>
+          {rows_html}
+          {more_html}
+        </table>
+      </td>
+    </tr>"""
+
+
 def _process_row(item: dict, bg: str) -> str:
     orgao   = item.get("orgao_nome", "")[:35]
     uf      = item.get("uf", "")
     objeto  = clean_objeto(item.get("description", ""))
     modal   = "Pregão" if item.get("modalidade_licitacao_id") == "6" else "Dispensa"
     prazo   = fmt_date_short(item.get("data_fim_vigencia", ""))
-    valor   = fmt_valor(item.get("valorTotalEstimado"))
+    valor   = fmt_valor(item.get("valor_pneus") or item.get("valorTotalEstimado"))
     link    = build_link(item)
     portal  = item.get("portal", "")
     sem_ext = portal in SEM_PORTAL_EXTERNO
@@ -300,7 +419,8 @@ def _process_row(item: dict, bg: str) -> str:
       <td style="padding:10px 8px;vertical-align:top;">
         <a href="{link}" style="background:#2980b9;color:#fff;padding:4px 10px;border-radius:4px;text-decoration:none;font-size:12px;white-space:nowrap;">Acessar →</a>
       </td>
-    </tr>"""
+    </tr>
+    {_items_subrow(item.get("tire_items", []))}"""
 
 
 def _urgency_row(item: dict, bg: str) -> str:
@@ -309,7 +429,7 @@ def _urgency_row(item: dict, bg: str) -> str:
     modal   = "Pregão" if item.get("modalidade_licitacao_id") == "6" else "Dispensa"
     portal  = item.get("portal", "")
     prazo   = fmt_date(item.get("data_fim_vigencia", ""))
-    valor   = fmt_valor(item.get("valorTotalEstimado"))
+    valor   = fmt_valor(item.get("valor_pneus") or item.get("valorTotalEstimado"))
     link    = build_link(item)
     d       = days_until(item.get("data_fim_vigencia", ""))
     urgency = "HOJE" if d == 0 else "AMANHÃ" if d == 1 else f"em {d}d"
@@ -336,7 +456,7 @@ def build_html(yesterday_items: list[dict], expiring_items: list[dict]) -> str:
     yesterday   = (brt_now - timedelta(days=1)).strftime("%d/%m/%Y")
     run_at      = brt_now.strftime("%d/%m/%Y %H:%M")
     total_proc  = len(yesterday_items)
-    total_valor = sum(i.get("valorTotalEstimado") or 0 for i in yesterday_items)
+    total_valor = sum(i.get("valor_pneus") or i.get("valorTotalEstimado") or 0 for i in yesterday_items)
 
     # ── Seção urgência ─────────────────────────────────────────────────────────
     urgency_html = ""
@@ -372,7 +492,7 @@ def build_html(yesterday_items: list[dict], expiring_items: list[dict]) -> str:
     portals_html = ""
 
     for portal, items in groups.items():
-        total_p = sum(i.get("valorTotalEstimado") or 0 for i in items)
+        total_p = sum(i.get("valor_pneus") or i.get("valorTotalEstimado") or 0 for i in items)
         rows    = "".join(
             _process_row(i, _ROW_ODD if idx % 2 == 0 else _ROW_EVEN)
             for idx, i in enumerate(items)
@@ -504,7 +624,7 @@ def main() -> None:
     expiring_items  = enriched[n:]
 
     # 4. Monta e envia
-    total_valor = sum(i.get("valorTotalEstimado") or 0 for i in yesterday_items)
+    total_valor = sum(i.get("valor_pneus") or i.get("valorTotalEstimado") or 0 for i in yesterday_items)
     subject     = (
         f"PNCP · pneu · {yesterday_str} · "
         f"{len(yesterday_items)} processos · {fmt_valor(total_valor)}"
