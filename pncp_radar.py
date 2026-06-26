@@ -32,8 +32,8 @@ BRT = timezone(timedelta(hours=-3))
 
 MODALIDADES = [6, 8]  # 6 = Pregão Eletrônico, 8 = Dispensa
 
-SLEEP_BETWEEN_DETAIL = 0.6   # segundos entre chamadas ao endpoint de detalhe
-SLEEP_BETWEEN_PAGES  = 0.8   # segundos entre páginas da busca
+SLEEP_BETWEEN_DETAIL = 1.5   # segundos entre chamadas ao endpoint de detalhe
+SLEEP_BETWEEN_PAGES  = 1.2   # segundos entre páginas da busca
 TAM_PAGINA           = 50
 MAX_RETRIES          = 4     # tentativas por request
 
