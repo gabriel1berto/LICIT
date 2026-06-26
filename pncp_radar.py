@@ -105,7 +105,7 @@ def is_tire_purchase(description: str) -> bool:
 
 # Padrões que identificam pneus mesmo sem a palavra "pneu" na descrição
 _TIRE_POSITIVE = [
-    re.compile(r'\d{3}/\d{2}\s*[Rr]\s*\d{2}'),   # medida: 205/75 R16
+    re.compile(r'\d{3}/\d{2}'),                    # medida: 175/70 (padrão pneu)
     re.compile(r'\bcâmara\s+de\s+ar\b', re.I),    # câmara de ar
 ]
 
