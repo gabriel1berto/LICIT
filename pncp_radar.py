@@ -44,22 +44,42 @@ HEADERS = {
 }
 
 PORTAL_MAP = {
-    "compras.gov":         "Compras.gov.br",
-    "governançabrasil":    "BLL Compras",
-    "ecustomize":          "Portal de Compras Públicas",
-    "licitanet":           "LicitaNet",
-    "licitar digital":     "Licitar Digital",
-    "bbmnet":              "BBMNET",
-    "embras":              "ProCompras",
-    "megasoft":            "Megasoft",
-    "elotech":             "Elotech",
-    "betha":               "Betha Licitações",
-    "publisol":            "Publisol",
-    "softplan":            "Softplan",
+    # Portais nacionais / federais
+    "compras.gov":              "Compras.gov.br",
+    "bolsa nacional de compras": "BNC",
+    "licitações-e":             "Licitações-e BB",
+    "licitacoes-e":             "Licitações-e BB",
+
+    # Portais privados com plataforma própria
+    "governançabrasil":         "BLL Compras",
+    "ecustomize":               "Portal de Compras Públicas",
+    "licitanet":                "LicitaNet",
+    "licitar digital":          "Licitar Digital",
+    "bbmnet":                   "BBMNET",
+    "embras":                   "ProCompras",
+    "centi":                    "CENTI",
+    "conam":                    "CONAM",
+
+    # ERPs municipais (submetem direto ao PNCP, sem portal externo)
+    "megasoft":                 "Megasoft",
+    "elotech":                  "Elotech",
+    "betha":                    "Betha Licitações",
+    "softplan":                 "Softplan",
+    "abase":                    "Abase Sistemas",
+    "ipm sistemas":             "IPM Sistemas",
+    "agili":                    "Agili",
+    "novoserv":                 "Novoserv",
+    "libre":                    "Libre Soluções",
+    "procergs":                 "PROCERGS",
+    "publisol":                 "Publisol",
 }
 
 # Portais sem URL externa — licitante precisa contatar órgão
-SEM_PORTAL_EXTERNO = {"Megasoft", "Elotech", "Betha Licitações", "Softplan"}
+SEM_PORTAL_EXTERNO = {
+    "Megasoft", "Elotech", "Betha Licitações", "Softplan",
+    "Abase Sistemas", "IPM Sistemas", "Agili", "Novoserv",
+    "Libre Soluções", "PROCERGS",
+}
 
 
 # ── HELPERS ────────────────────────────────────────────────────────────────────
