@@ -1,0 +1,30 @@
+name: PNCP Radar — Pneus
+
+on:
+  schedule:
+    - cron: '0 8 * * 1-5'   # 05h BRT (UTC-3), dias úteis
+  workflow_dispatch:          # disparo manual pelo GitHub UI
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r requirements_radar.txt
+
+      - name: Rodar radar
+        env:
+          GMAIL_USER:         ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_TO:           ${{ secrets.EMAIL_TO }}
+        run: python pncp_radar.py
