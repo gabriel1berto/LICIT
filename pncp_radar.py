@@ -130,7 +130,7 @@ def is_tire_item(desc: str) -> bool:
     for pat in _TIRE_POSITIVE:
         if pat.search(desc):
             return True
-    # Tem "pneu" mas sem sinal claro → inclui (conservador)
+    # Tem "pneu" mas sem sinal claro ->inclui (conservador)
     return "pneu" in desc.lower()
 
 
@@ -285,7 +285,7 @@ def enrich(items: list[dict]) -> list[dict]:
         seq  = item.get("numero_sequencial", "")
 
         if cnpj and ano and seq:
-            # 1. Detalhe → portal + valorTotalEstimado
+            # 1. Detalhe ->portal + valorTotalEstimado
             detail = fetch_detail(cnpj, ano, seq)
             if detail:
                 item["usuarioNome"]        = detail.get("usuarioNome", "")
@@ -296,15 +296,15 @@ def enrich(items: list[dict]) -> list[dict]:
                 item["portal"] = resolve_portal("")
             time.sleep(SLEEP_BETWEEN_DETAIL)
 
-            # 2. Itens → filtra falsos positivos
+            # 2. Itens ->filtra falsos positivos
             tire_items = fetch_tire_items(cnpj, ano, seq)
             time.sleep(SLEEP_BETWEEN_DETAIL)
         else:
             item["portal"] = resolve_portal("")
             tire_items = None
 
-        # tire_items = None → API falhou, mantém por cautela
-        # tire_items = []   → sem pneu real, descarta
+        # tire_items = None ->API falhou, mantém por cautela
+        # tire_items = []   ->sem pneu real, descarta
         if tire_items is not None and len(tire_items) == 0:
             print(f"  {i}/{len(items)}: DESCARTADO (falso positivo) — {item.get('orgao_nome','')[:45]}")
             continue
@@ -449,7 +449,7 @@ def _process_row(item: dict, bg: str) -> str:
 def _urgency_row(item: dict, bg: str) -> str:
     orgao   = item.get("orgao_nome", "")[:35]
     uf      = item.get("uf", "")
-    portal  = item.get("portal", "")
+    portal  = item.get("portal") or resolve_portal(item.get("usuarioNome", ""))
     prazo   = fmt_date(item.get("data_fim_vigencia", ""))
     valor   = fmt_valor(item.get("valor_pneus") or item.get("valorTotalEstimado"))
     link    = build_link(item)
@@ -606,7 +606,7 @@ def send_email(html: str, subject: str) -> None:
         server.starttls()
         server.login(gmail_user, gmail_pass)
         server.sendmail(gmail_user, email_to, msg.as_string())
-        print(f"Email enviado → {email_to}")
+        print(f"Email enviado ->{email_to}")
 
 
 # ── MAIN ───────────────────────────────────────────────────────────────────────
@@ -625,7 +625,7 @@ def main() -> None:
     # 2. Pré-filtro: descarta serviços e não-compras antes de buscar detalhes
     n_before = len(all_items)
     all_items = [i for i in all_items if is_tire_purchase(i.get("description", ""))]
-    print(f"Pré-filtro objetivo: {n_before} → {len(all_items)} processos")
+    print(f"Pré-filtro objetivo: {n_before} ->{len(all_items)} processos")
 
     # 3. Filtra por data
     yesterday_items = filter_published_yesterday(all_items)
@@ -642,16 +642,15 @@ def main() -> None:
         print("Nenhum processo encontrado. Email não enviado.")
         return
 
-    # 4. Enriquece com portal, srp, valorTotalEstimado e itens de pneu
-    to_enrich = yesterday_items + expiring_items
-    print(f"Buscando detalhes de {len(to_enrich)} processos...")
-    enriched  = enrich(to_enrich)
+    # 4. Enriquece apenas os publicados ontem (detalhe + itens de pneu)
+    #    Processos "vencendo em breve" usam só os dados da busca (sem chamadas extras)
+    if yesterday_items:
+        print(f"Buscando detalhes de {len(yesterday_items)} processos (publicados ontem)...")
+        yesterday_items = enrich(yesterday_items)
+    else:
+        print("Nenhum publicado ontem — alertas de vencimento sem enriquecimento.")
 
-    n = len(yesterday_items)
-    yesterday_items = enriched[:n]
-    expiring_items  = enriched[n:]
-
-    # 4. Monta e envia
+    # 5. Monta e envia
     total_valor = sum(i.get("valor_pneus") or i.get("valorTotalEstimado") or 0 for i in yesterday_items)
     subject     = (
         f"PNCP · pneu · {yesterday_str} · "
