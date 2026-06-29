@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+gp_cookies.json
+*.json
+!package.json
