@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-import requests
+from curl_cffi import requests
 
 # ── CONFIGURAÇÃO ───────────────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ MODALIDADES = [6, 8]  # 6 = Pregão Eletrônico, 8 = Dispensa
 SLEEP_BETWEEN_DETAIL = 1.5   # segundos entre chamadas ao endpoint de detalhe
 SLEEP_BETWEEN_PAGES  = 1.2   # segundos entre páginas da busca
 TAM_PAGINA           = 50
-MAX_RETRIES          = 4     # tentativas por request
+MAX_RETRIES          = 2     # tentativas por request — baixo de propósito: melhor falhar rápido num item travado do que estourar o timeout do job inteiro
 
 HEADERS = {
     "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -210,18 +210,19 @@ def days_until(s: str) -> int | None:
 
 # ── FETCH ──────────────────────────────────────────────────────────────────────
 
-def _get_with_retry(url: str, params: dict | None = None) -> requests.Response | None:
+def _get_with_retry(url: str, params: dict | None = None, timeout: int = 30) -> requests.Response | None:
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            r = requests.get(url, params=params, headers=HEADERS, timeout=30)
+            r = requests.get(url, params=params, headers=HEADERS, timeout=timeout,
+                             impersonate="chrome120", verify=False)
             if r.status_code == 429:
-                wait = 5 * attempt
+                wait = 3 * attempt
                 print(f"  rate limit — aguardando {wait}s (tentativa {attempt})")
                 time.sleep(wait)
                 continue
             return r
-        except (requests.ConnectionError, requests.Timeout) as e:
-            wait = 3 * attempt
+        except Exception as e:
+            wait = 2 * attempt
             print(f"  conexão falhou ({e.__class__.__name__}) — aguardando {wait}s (tentativa {attempt})")
             time.sleep(wait)
     return None
@@ -261,7 +262,7 @@ def collect_all_open(modalidade: int) -> list[dict]:
 
 def fetch_detail(cnpj: str, ano: str, seq: str) -> dict | None:
     url = PNCP_DETAIL.format(cnpj=cnpj, ano=ano, seq=seq)
-    r   = _get_with_retry(url)
+    r   = _get_with_retry(url, timeout=6)
     if r is not None and r.status_code == 200:
         return r.json()
     return None
@@ -270,7 +271,7 @@ def fetch_detail(cnpj: str, ano: str, seq: str) -> dict | None:
 def fetch_tire_items(cnpj: str, ano: str, seq: str) -> list[dict] | None:
     """Retorna os itens de pneu do processo, ou None em caso de falha na API."""
     url = PNCP_ITEMS.format(cnpj=cnpj, ano=ano, seq=seq)
-    r   = _get_with_retry(url, params={"pagina": 1, "tamanhoPagina": 500})
+    r   = _get_with_retry(url, params={"pagina": 1, "tamanhoPagina": 500}, timeout=6)
     if r is None or r.status_code != 200:
         return None
     all_items = r.json().get("data", [])
@@ -617,8 +618,14 @@ def main() -> None:
     # 1. Coleta todos os processos abertos
     print("Coletando processos abertos...")
     all_items: list[dict] = []
-    for mod in MODALIDADES:
-        all_items.extend(collect_all_open(mod))
+    try:
+        for mod in MODALIDADES:
+            all_items.extend(collect_all_open(mod))
+    except RuntimeError as e:
+        print(f"\n⚠️  PNCP inacessível: {e}")
+        print("Possíveis causas: queda do servidor, bloqueio de IP ou WAF.")
+        print("Tente novamente em alguns minutos ou aguarde até amanhã.")
+        return
 
     print(f"Total abertos: {len(all_items)}")
 
