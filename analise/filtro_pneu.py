@@ -23,8 +23,20 @@ import re
 
 # ── Nível ITEM — mesmo regex validado, ver README.md ───────────────────────
 
-RE_PNEU_INICIO = re.compile(r"^\s*pneus?\b", re.IGNORECASE)
-RE_CAMARA_INICIO = re.compile(r"^\s*c[âa]mara\s+(de\s+)?ar\b", re.IGNORECASE)
+# achado 07/jul/26 auditando falso negativo real em massa (jun-jul/2026, ver Notion "PNCP
+# Radar"): catálogo real prefixa "pneu" com código de item ("0006648 - PNEU..."), cota de
+# licitação ("[COTA AMPLA CONCORRÊNCIA] - PNEU...") ou verbo de aquisição ("AQUISIÇÃO DE
+# PNEUS..."). Âncora estrita `^\s*pneus?` perdia todos esses — permite prefixo curto e
+# conhecido antes de "pneu"/"câmara", sem abrir mão da âncora (ainda exige que "pneu" seja
+# o PRODUTO logo no início, só ignora ruído burocrático na frente dele).
+RE_PREFIXO_IGNORAR = (
+    r"(?:\[.{0,40}?\]\s*[-–]?\s*)?"                                    # "[COTA ...] - "
+    r"(?:\d{1,10}\s*[-–]\s*)?"                                          # "0006648 - "
+    r"(?:(?:aquisi[çc][ãa]o|fornecimento|contrata[çc][ãa]o|compra)\s+"
+    r"(?:parcelada\s+)?(?:de\s+)?)?"                                    # "aquisição de "
+)
+RE_PNEU_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}pneus?\b", re.IGNORECASE)
+RE_CAMARA_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]mara\s+(de\s+)?ar\b", re.IGNORECASE)
 RE_MEDIDA_R = re.compile(r"\d{3}\s*/\s*\d{2}\s*[Rr]\s*\d{2}\b")
 # bug achado jul/2026: veículo inteiro (caminhão/ambulância/pick-up/van) que só CITA a
 # medida do pneu de fábrica batia em RE_MEDIDA_R e virava "eh_pneu=1" — item de
@@ -35,13 +47,26 @@ RE_VEICULO_INICIO = re.compile(
     r"pick[ -]?up|caminhonete|loca[çc][ãa]o\s+(di[áa]ria\s+)?de\s+ve[íi]culo)",
     re.IGNORECASE,
 )
-RE_EXCLUSAO = re.compile(
+# achado 07/jul/26: "Pneu para retroescavadeira, construção radial..." é o PRODUTO pneu
+# (RE_PNEU_INICIO já bate), retroescavadeira é só o contexto de aplicação — mas caía nessa
+# exclusão mesmo assim. Split em 2 grupos: RE_EXCLUSAO_MAQUINA só vale quando o produto foi
+# confirmado por medida solta (ambíguo — podia ser a máquina inteira citando a medida do
+# pneu de fábrica); se já veio de RE_PNEU_INICIO/RE_CAMARA_INICIO, o produto já é pneu com
+# certeza, nome de máquina no meio da frase é só aplicação, não desqualifica.
+# RE_EXCLUSAO_SERVICO sempre vale — pneu NOVO nunca é descrito com "recapagem"/"conserto".
+RE_EXCLUSAO_MAQUINA = re.compile(
     r"carregadeira|motoniveladora|retroescavadeira|escavadeira|rolo\s+compactador|"
-    r"cadeira\s+de\s+rodas|recapagem|vulcaniza[çc][ãa]o|alinhamento|balanceamento|conserto|"
+    r"cadeira\s+de\s+rodas",
+    re.IGNORECASE,
+)
+RE_EXCLUSAO_SERVICO = re.compile(
+    r"recapagem|vulcaniza[çc][ãa]o|alinhamento|balanceamento|conserto|"
     r"presta[çc][aã]o\s+de\s+servi[çc]|servi[çc]os?\s+de\s+(borracharia|recauchutagem|vulcaniza|substitui)|"
     r"loca[çc][aã]o\s+de\s+(trator|m[áa]quina|equipamento)|"
     r"loca[çc][aã]o\s+(di[áa]ria\s+)?de.{0,40}(ve[íi]culo|van|minibus|micro[ -]?[ôo]nibus|[ôo]nibus|caminh[ãa]o|ambul[âa]ncia)|"
     r"manuten[çc][ãa]o\s+(preventiva|corretiva)?\s*(do|de)\s+ve[íi]culo|"
+    r"servi[çc]o\s+de\s+(montagem|desmontagem|rod[íi]zio)|montagem\s+e\s+desmontagem|"
+    r"rod[íi]zio\s+de\s+pneus?|remendo\s+de\s+pneus?|"
     r"n[úu]cleo.*v[áa]lvula|v[áa]lvula.*n[úu]cleo",
     re.IGNORECASE,
 )
@@ -57,8 +82,15 @@ def eh_pneu_de_verdade(descricao: str) -> bool:
         return False
     if RE_VEICULO_INICIO.search(descricao):
         return False
-    bate_produto = bool(RE_PNEU_INICIO.search(descricao) or RE_CAMARA_INICIO.search(descricao) or RE_MEDIDA_R.search(descricao))
-    return bate_produto and not RE_EXCLUSAO.search(descricao)
+    produto_explicito = bool(RE_PNEU_INICIO.search(descricao) or RE_CAMARA_INICIO.search(descricao))
+    bate_produto = produto_explicito or bool(RE_MEDIDA_R.search(descricao))
+    if not bate_produto:
+        return False
+    if RE_EXCLUSAO_SERVICO.search(descricao):
+        return False
+    if not produto_explicito and RE_EXCLUSAO_MAQUINA.search(descricao):
+        return False
+    return True
 
 
 def classificar_categoria(descricao: str) -> str:
