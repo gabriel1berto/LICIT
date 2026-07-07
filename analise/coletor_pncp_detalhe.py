@@ -34,7 +34,7 @@ import os
 import shutil
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg2
@@ -276,23 +276,59 @@ def processar_processo(con: psycopg2.extensions.connection, cur: psycopg2.extens
 
 # ── Loop principal ────────────────────────────────────────────────────────
 
+TIMEOUT_PROCESSANDO_MIN = 15  # reivindicação travada há mais que isso = worker morto/cortado, libera de novo
+
+
+def reivindicar_proximo(con: psycopg2.extensions.connection, cur: psycopg2.extensions.cursor) -> str | None:
+    """Reivindica atomicamente 1 processo (não uma lista inteira) — permite múltiplos
+    workers rodando ao mesmo tempo (ex: local + GitHub Actions) sem duplicar trabalho.
+    `FOR UPDATE SKIP LOCKED` é o padrão Postgres pra fila com múltiplos consumidores:
+    cada worker pula silenciosamente linha que outro já está processando, em vez de
+    esperar ou pegar a mesma. status='processando' travado há mais de 15min é tratado
+    como worker morto (ex: job cortado no teto de 330min do GitHub Actions no meio do
+    processamento) — libera pra reivindicação de novo, senão ficaria perdido pra sempre.
+    """
+    cur.execute("""
+        UPDATE progresso_detalhe
+        SET status='processando', atualizado_em=%s
+        WHERE numero_controle_pncp = (
+            SELECT numero_controle_pncp FROM progresso_detalhe
+            WHERE status='pendente'
+               OR (status='erro' AND tentativas < %s)
+               OR (status='processando' AND atualizado_em < %s)
+            ORDER BY numero_controle_pncp
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+        )
+        RETURNING numero_controle_pncp
+    """, (
+        datetime.now(timezone.utc).isoformat(),
+        MAX_TENTATIVAS_PROCESSO,
+        (datetime.now(timezone.utc) - timedelta(minutes=TIMEOUT_PROCESSANDO_MIN)).isoformat(),
+    ))
+    row = cur.fetchone()
+    con.commit()  # commita a reivindicação já — outro worker precisa enxergar isso na hora, não só no fim
+    return row[0] if row else None
+
+
 def coletar(limite: int | None) -> None:
     con, cur = conectar_db()
     popular_fila_se_vazia(con, cur, limite)
 
-    # status='erro' com poucas tentativas também entra — sem isso, processo que falhou
-    # 1x numa execução de cron fica travado em erro pra sempre, nunca mais re-tentado
-    # (rodando sem supervisão, ninguém vai notar e re-rodar manualmente como antes).
     cur.execute("""
-        SELECT numero_controle_pncp FROM progresso_detalhe
+        SELECT COUNT(*) FROM progresso_detalhe
         WHERE status='pendente' OR (status='erro' AND tentativas < %s)
-        ORDER BY numero_controle_pncp
     """, (MAX_TENTATIVAS_PROCESSO,))
-    pendentes = cur.fetchall()
-    log.info(f"Iniciando fase 2 — {len(pendentes)} processos pendentes.")
+    total_estimado = cur.fetchone()[0]
+    log.info(f"Iniciando fase 2 — ~{total_estimado} processos pendentes (estimativa no início, outros workers podem mudar isso).")
 
-    for i, (numero_controle,) in enumerate(pendentes, 1):
+    i = 0
+    while True:
         aguardar_espaco_em_disco()
+        numero_controle = reivindicar_proximo(con, cur)
+        if numero_controle is None:
+            break
+        i += 1
         try:
             processar_processo(con, cur, numero_controle)
             cur.execute(
@@ -309,7 +345,7 @@ def coletar(limite: int | None) -> None:
         con.commit()
 
         if i % 50 == 0:
-            log.info(f"Progresso: {i}/{len(pendentes)} processos ({i/len(pendentes)*100:.1f}%)")
+            log.info(f"Progresso nessa execução: {i} processos (~{total_estimado} estimado no início).")
 
     cur.execute("SELECT COUNT(*) FROM progresso_detalhe WHERE status='feito'")
     n_feito = cur.fetchone()[0]
@@ -320,7 +356,7 @@ def coletar(limite: int | None) -> None:
     cur.execute("SELECT COUNT(*) FROM resultados")
     n_resultados = cur.fetchone()[0]
     log.info(
-        f"Fase 2 concluída (ou pausada). {n_feito} processos ok, {n_erro} com erro. "
+        f"Fase 2 concluída (ou pausada). {i} processos nessa execução. {n_feito} total ok, {n_erro} total com erro. "
         f"{n_itens_pneu} itens de pneu confirmados, {n_resultados} resultados coletados."
     )
     cur.close()
