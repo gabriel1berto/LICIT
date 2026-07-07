@@ -12,6 +12,7 @@ Variáveis de ambiente (GitHub Secrets):
 """
 
 import os
+import re
 import smtplib
 import sys
 import time
@@ -26,7 +27,7 @@ from curl_cffi import requests
 # Zero dependência pesada nesse módulo (só `re`), então não puxa psycopg2/etc
 # pra dentro do requirements_radar.txt.
 sys.path.insert(0, str(Path(__file__).parent / "analise"))
-from filtro_pneu import classificar_pneu, eh_pneu_de_verdade, classificar_categoria
+from filtro_pneu import classificar_pneu, eh_pneu_de_verdade
 
 # ── CONFIGURAÇÃO ───────────────────────────────────────────────────────────────
 
