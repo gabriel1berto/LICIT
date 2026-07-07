@@ -260,12 +260,20 @@ def fetch_detail(cnpj: str, ano: str, seq: str) -> dict | None:
 
 
 def fetch_tire_items(cnpj: str, ano: str, seq: str) -> list[dict] | None:
-    """Retorna os itens de pneu do processo, ou None em caso de falha na API."""
+    """Retorna os itens de pneu do processo, ou None em caso de falha (inclusive resposta
+    200 vazia — achado 07/jul/26 auditando falso negativo real: PNCP às vezes responde
+    200 com lista vazia por instabilidade momentânea, não por o processo genuinamente não
+    ter item nenhum — todo edital real tem >=1 item. Tratar como sucesso-com-zero-itens
+    aqui descartaria processo válido; None faz enrich() manter "por cautela" como já faz
+    pra falha de rede.
+    """
     url = PNCP_ITEMS.format(cnpj=cnpj, ano=ano, seq=seq)
     r   = _get_with_retry(url, timeout=6)  # sem pagina/tamanhoPagina — api/pncp/v1 devolve lista completa direto
     if r is None or r.status_code != 200:
         return None
     all_items = r.json()  # lista direta, não {"data": [...]}
+    if not all_items:
+        return None
     return [it for it in all_items if is_tire_item(it.get("descricao", ""))]
 
 
