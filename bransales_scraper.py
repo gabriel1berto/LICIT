@@ -13,11 +13,13 @@ Critérios validados por item (via items.json):
   padrao_piso   — "AT" exige All-Terrain pelo nome ("" = ignora)
 """
 
-import json, re, sys
+import json, os, re, sys
+from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
 
-EMAIL    = "ghumberto.eng@gmail.com"
-PASSWORD = "***REMOVIDO***"
+load_dotenv()
+EMAIL    = os.environ["BRANSALES_EMAIL"]
+PASSWORD = os.environ["BRANSALES_PASSWORD"]
 BASE     = "https://atacado.bransales.com.br"
 MAX_CHECK = 3
 

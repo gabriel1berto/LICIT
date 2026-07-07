@@ -5,7 +5,7 @@ Uso   : python green_scraper.py items_cantagalo.json [results_cantagalo_green.js
 Output: JSON com produtos por item, ordenados por preço
 
 Autenticação: login via UI (e-mail + senha em 2 passos, sem reCAPTCHA).
-Credenciais: ghumberto.eng@gmail.com / ***REMOVIDO***
+Credenciais: GREEN_EMAIL / GREEN_PASSWORD no .env
 
 URL de busca: /loja/busca.php?loja=1063462&palavra_busca={MEDIDA}
 Formato de medida: "205/75 R16C" (slash, espaço antes do R, uppercase, sufixo C se houver)
@@ -22,12 +22,14 @@ Specs disponíveis na ficha de produto:
 
 import json, os, re, sys
 from urllib.parse import quote
+from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
 
+load_dotenv()
 BASE      = "https://www.pneugreen.com.br"
 LOJA_ID   = "1063462"
-LOGIN_EMAIL = "ghumberto.eng@gmail.com"
-LOGIN_PASS  = "***REMOVIDO***"
+LOGIN_EMAIL = os.environ["GREEN_EMAIL"]
+LOGIN_PASS  = os.environ["GREEN_PASSWORD"]
 MAX_CHECK   = 3
 
 IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUVWHY")}
@@ -68,7 +70,9 @@ def piso_ok_nome(nome: str, padrao: str) -> bool | None:
 
 
 def build_medida_green(cfg: dict) -> str:
-    """Formato PneuGreen: '205/75 R16C' (slash, espaço antes do R, uppercase)."""
+    """Formato PneuGreen: '205/75 R16C' (passeio/caminhão) ou '11.2-24' (agrícola, sem espaço/R)."""
+    if cfg.get("categoria") == "agricola":
+        return f"{cfg['largura']}-{cfg['aro']}"
     return f"{cfg['largura']}/{cfg['altura']} R{cfg['aro'].upper()}"
 
 
@@ -76,7 +80,7 @@ def build_medida_green(cfg: dict) -> str:
 
 def login(page) -> bool:
     """Faz login em 2 passos no PneuGreen. Retorna True se bem-sucedido."""
-    page.goto(f"{BASE}/my-account/login", wait_until="domcontentloaded", timeout=15_000)
+    page.goto(f"{BASE}/my-account/login", wait_until="networkidle", timeout=45_000)
     # Passo 1: clicar em "Entrar" para revelar o campo de e-mail
     page.click('button:has-text("Entrar"), .btn:has-text("Entrar")')
     page.wait_for_selector('#input-email', state="visible", timeout=5_000)
@@ -212,6 +216,14 @@ def process_item(page, cfg: dict) -> list[dict]:
 
     candidates = scrape_listing(page, medida)
     print(f"[item {item_n:02}] {len(candidates)} produto(s) em estoque", file=sys.stderr)
+
+    # Busca por medida mistura tipos de produto (câmara, roda) — filtra pelo tipo esperado
+    categoria = cfg.get("categoria", "")
+    if categoria != "camara":
+        antes = len(candidates)
+        candidates = [c for c in candidates if not re.search(r"c[âa]mara|\broda\b", c["nome"], re.I)]
+        if len(candidates) < antes:
+            print(f"  [filtro tipo] {antes - len(candidates)} câmara/roda descartada(s)", file=sys.stderr)
 
     if not candidates:
         return [{

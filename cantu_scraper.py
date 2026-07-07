@@ -19,12 +19,14 @@ ACESSO:
   Login: modal disparado ao clicar "Ver preço" na listagem
 """
 
-import json, re, sys, unicodedata
+import json, os, re, sys, unicodedata
 from urllib.parse import quote
+from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
 
-EMAIL     = "ghumberto.eng@gmail.com"
-PASSWORD  = "***REMOVIDO***"
+load_dotenv()
+EMAIL     = os.environ["CANTU_EMAIL"]
+PASSWORD  = os.environ["CANTU_PASSWORD"]
 BASE      = "https://empresas.speedmax.com.br"
 MAX_CHECK = 3  # máx de produtos visitados por item
 
@@ -83,11 +85,18 @@ def extract_brand(nome: str) -> str:
 
 
 def build_title(cfg: dict) -> str:
-    """Monta string de busca: ex. '205/60R16' ou '205/75R16C'."""
+    """Monta string de busca: ex. '205/60R16' (passeio/caminhão) ou '11.2-24' (agrícola)."""
+    if cfg.get("categoria") == "agricola":
+        return f"{cfg['largura']}-{cfg['aro']}"
     L = cfg["largura"]
     A = cfg.get("altura", "")
     R = str(cfg["aro"]).upper()
     return f"{L}/{A}R{R}"
+
+
+def category_path(cfg: dict) -> str:
+    """Segmento de URL da categoria: 'pneus' (padrão) ou 'agricola'."""
+    return "agricola" if cfg.get("categoria") == "agricola" else "pneus"
 
 
 # ── LOGIN ──────────────────────────────────────────────────────────────────────
@@ -128,7 +137,7 @@ def login(page):
         raise
 
     # Aguarda modal aparecer
-    page.wait_for_selector("input[placeholder*='email'], input[type='email']", timeout=8_000)
+    page.wait_for_selector("input[placeholder*='email'], input[type='email']", timeout=20_000)
 
     page.get_by_role("textbox", name=re.compile("e-?mail", re.I)).fill(EMAIL)
     page.get_by_role("textbox", name=re.compile(r"\*+|senha", re.I)).fill(PASSWORD)
@@ -143,10 +152,10 @@ def login(page):
 
 # ── SCRAPE DA LISTAGEM ─────────────────────────────────────────────────────────
 
-def scrape_listing(page, title: str) -> list[dict]:
+def scrape_listing(page, title: str, path: str = "pneus") -> list[dict]:
     """Retorna produtos em estoque com preço Pix, ordenados do mais barato."""
     url = (
-        f"{BASE}/pneus?&title={quote(title)}"
+        f"{BASE}/{path}?&title={quote(title)}"
         f"&page=1&pageSize=20&sortBy=LowestPrice"
     )
     # networkidle aguarda as chamadas de API de preços completarem
@@ -282,9 +291,10 @@ def process_item(page, cfg: dict) -> list[dict]:
     item_n         = cfg["item"]
 
     title = build_title(cfg)
-    print(f"\n[item {item_n:02}] busca Cantu: '{title}'", file=sys.stderr)
+    path  = category_path(cfg)
+    print(f"\n[item {item_n:02}] busca Cantu ({path}): '{title}'", file=sys.stderr)
 
-    candidates = scrape_listing(page, title)
+    candidates = scrape_listing(page, title, path)
     print(f"[item {item_n:02}] {len(candidates)} produto(s) em estoque", file=sys.stderr)
 
     results = []
