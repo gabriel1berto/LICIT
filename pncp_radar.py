@@ -33,7 +33,13 @@ from filtro_pneu import classificar_pneu, eh_pneu_de_verdade
 
 PNCP_SEARCH  = "https://pncp.gov.br/api/search/"
 PNCP_DETAIL  = "https://pncp.gov.br/api/consulta/v1/orgaos/{cnpj}/compras/{ano}/{seq}"
-PNCP_ITEMS   = "https://pncp.gov.br/api/consulta/v1/orgaos/{cnpj}/compras/{ano}/{seq}/itens"
+# bug achado 07/jul/26: api/consulta/v1/.../itens sempre dá 404 — endpoint certo pra
+# itens é api/pncp/v1 (mesmo usado por coletor_pncp_detalhe.py), não api/consulta/v1.
+# Consequência real: fetch_tire_items() nunca conseguia dado, retornava None sempre,
+# e o código mantém processo "por cautela" quando a API falha — ou seja, o filtro de
+# item NUNCA rodava de verdade, só o filtro fraco de processo passava tudo. Era a causa
+# raiz dos falsos positivos (veículo inteiro, serviço), não o filtro em si.
+PNCP_ITEMS   = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{seq}/itens"
 PNCP_APP_URL = "https://pncp.gov.br/app/editais/{cnpj}/{ano}/{seq}"
 
 BRT = timezone(timedelta(hours=-3))
@@ -256,10 +262,10 @@ def fetch_detail(cnpj: str, ano: str, seq: str) -> dict | None:
 def fetch_tire_items(cnpj: str, ano: str, seq: str) -> list[dict] | None:
     """Retorna os itens de pneu do processo, ou None em caso de falha na API."""
     url = PNCP_ITEMS.format(cnpj=cnpj, ano=ano, seq=seq)
-    r   = _get_with_retry(url, params={"pagina": 1, "tamanhoPagina": 500}, timeout=6)
+    r   = _get_with_retry(url, timeout=6)  # sem pagina/tamanhoPagina — api/pncp/v1 devolve lista completa direto
     if r is None or r.status_code != 200:
         return None
-    all_items = r.json().get("data", [])
+    all_items = r.json()  # lista direta, não {"data": [...]}
     return [it for it in all_items if is_tire_item(it.get("descricao", ""))]
 
 
