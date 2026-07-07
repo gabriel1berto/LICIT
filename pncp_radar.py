@@ -42,7 +42,9 @@ MODALIDADES = [6, 8]  # 6 = Pregão Eletrônico, 8 = Dispensa
 SLEEP_BETWEEN_DETAIL = 1.5   # segundos entre chamadas ao endpoint de detalhe
 SLEEP_BETWEEN_PAGES  = 1.2   # segundos entre páginas da busca
 TAM_PAGINA           = 50
-MAX_RETRIES          = 2     # tentativas por request — baixo de propósito: melhor falhar rápido num item travado do que estourar o timeout do job inteiro
+MAX_RETRIES          = 5     # tentativas por request — 07/jul/26: subiu de 2 pra 5 (PNCP mostrou instabilidade
+                              # genérica o dia inteiro, timeout puro em todo endpoint testado, não é bloqueio de
+                              # IP). Job tem 30min de budget (.yml), sobra folga — 2 desistia cedo demais.
 
 HEADERS = {
     "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
