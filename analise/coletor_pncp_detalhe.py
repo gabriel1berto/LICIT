@@ -135,8 +135,8 @@ def get_com_retry(url: str, params: dict | None = None) -> dict | list | None:
                               impersonate="chrome120", verify=False)
             if r.status_code == 200:
                 return r.json()
-            if r.status_code == 404:
-                return None  # processo sem esse recurso (ex: sem itens) — não é erro transitório
+            if r.status_code in (404, 410):
+                return None  # recurso não existe (404) ou foi removido pelo PNCP (410) — permanente, não transitório
             log.warning(f"{url}: HTTP {r.status_code} (tentativa {tentativa}/{MAX_TENTATIVAS})")
         except Exception as e:
             log.warning(f"{url}: erro '{e}' (tentativa {tentativa}/{MAX_TENTATIVAS})")
