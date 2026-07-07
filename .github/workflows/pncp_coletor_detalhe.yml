@@ -1,0 +1,34 @@
+name: PNCP Coletor — Detalhe (fase 2)
+
+on:
+  schedule:
+    - cron: '0 0,11,22 * * *'   # 00:00, 11:00, 22:00 UTC
+    - cron: '30 5,16 * * *'     # 05:30, 16:30 UTC — junto com a linha acima, ~5h30 entre disparos
+  workflow_dispatch:
+
+concurrency:
+  group: pncp-coletor-detalhe
+  cancel-in-progress: false
+
+jobs:
+  coleta_detalhe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330   # 5h30 — margem de 30min sob o teto de 6h da Actions
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r analise/requirements.txt
+
+      - name: Rodar coletor de detalhe (fase 2)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: analise
+        run: python coletor_pncp_detalhe.py

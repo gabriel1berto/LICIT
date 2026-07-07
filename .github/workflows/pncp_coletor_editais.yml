@@ -1,0 +1,36 @@
+name: PNCP Coletor — Editais (fase 1, manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      uf:
+        description: 'UF única (ex: SP) — vazio roda todas as 27'
+        required: false
+
+jobs:
+  coleta_editais:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r analise/requirements.txt
+
+      - name: Rodar coletor de editais (fase 1)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: analise
+        run: |
+          if [ -n "${{ github.event.inputs.uf }}" ]; then
+            python coletor_pncp.py --uf "${{ github.event.inputs.uf }}"
+          else
+            python coletor_pncp.py
+          fi

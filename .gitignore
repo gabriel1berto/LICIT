@@ -4,3 +4,5 @@ __pycache__/
 gp_cookies.json
 *.json
 !package.json
+dados/*/*.csv
+analise/pncp_raw.db
