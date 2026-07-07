@@ -32,7 +32,6 @@ import argparse
 import json
 import logging
 import os
-import re
 import shutil
 import sys
 import time
@@ -81,55 +80,9 @@ logging.basicConfig(
 log = logging.getLogger("coletor_pncp_detalhe")
 
 
-# ── Filtro "é pneu de verdade?" — mesmo regex validado de base_pneu.sql ────
+# ── Filtro "é pneu de verdade?" — módulo único, ver filtro_pneu.py ─────────
 
-RE_PNEU_INICIO = re.compile(r"^\s*pneus?\b", re.IGNORECASE)
-RE_CAMARA_INICIO = re.compile(r"^\s*c[âa]mara\s+(de\s+)?ar\b", re.IGNORECASE)
-RE_MEDIDA_R = re.compile(r"\d{3}\s*/\s*\d{2}\s*[Rr]\s*\d{2}\b")
-# bug achado jul/2026: veículo inteiro (caminhão/ambulância/pick-up/van) que só CITA a
-# medida do pneu de fábrica batia em RE_MEDIDA_R e virava "eh_pneu=1" — item de
-# R$100k-800k/unidade (o veículo), não o pneu. Mesma lógica de âncora no início já usada
-# pra pneu/câmara: se o produto começa com nome de veículo, medida solta não conta.
-RE_VEICULO_INICIO = re.compile(
-    r"^\s*(ve[íi]culo|caminh[ãa]o|ambul[âa]ncia|[ôo]nibus|micro[ -]?[ôo]nibus|van\b|"
-    r"pick[ -]?up|caminhonete|loca[çc][ãa]o\s+(di[áa]ria\s+)?de\s+ve[íi]culo)",
-    re.IGNORECASE,
-)
-RE_EXCLUSAO = re.compile(
-    r"carregadeira|motoniveladora|retroescavadeira|escavadeira|rolo\s+compactador|"
-    r"cadeira\s+de\s+rodas|recapagem|vulcaniza[çc][ãa]o|alinhamento|balanceamento|conserto|"
-    r"presta[çc][aã]o\s+de\s+servi[çc]|servi[çc]os?\s+de\s+(borracharia|recauchutagem|vulcaniza|substitui)|"
-    r"loca[çc][aã]o\s+de\s+(trator|m[áa]quina|equipamento)|"
-    r"loca[çc][aã]o\s+(di[áa]ria\s+)?de.{0,40}(ve[íi]culo|van|minibus|micro[ -]?[ôo]nibus|[ôo]nibus|caminh[ãa]o|ambul[âa]ncia)|"
-    r"manuten[çc][ãa]o\s+(preventiva|corretiva)?\s*(do|de)\s+ve[íi]culo|"
-    r"n[úu]cleo.*v[áa]lvula|v[áa]lvula.*n[úu]cleo",
-    re.IGNORECASE,
-)
-RE_CATEGORIA_CAMARA = RE_CAMARA_INICIO
-RE_CATEGORIA_MOTO = re.compile(r"motocicleta|motoneta|ciclomotor", re.IGNORECASE)
-RE_CATEGORIA_AGRICOLA = re.compile(r"trator|agr[íi]cola", re.IGNORECASE)
-RE_CATEGORIA_CAMINHAO = re.compile(r"r2[2-9]\.?[05]?\b|r1[7-9]\.?5\b", re.IGNORECASE)
-
-
-def eh_pneu_de_verdade(descricao: str) -> bool:
-    if not descricao:
-        return False
-    if RE_VEICULO_INICIO.search(descricao):
-        return False
-    bate_produto = bool(RE_PNEU_INICIO.search(descricao) or RE_CAMARA_INICIO.search(descricao) or RE_MEDIDA_R.search(descricao))
-    return bate_produto and not RE_EXCLUSAO.search(descricao)
-
-
-def classificar_categoria(descricao: str) -> str:
-    if RE_CATEGORIA_CAMARA.search(descricao):
-        return "Câmara de ar"
-    if RE_CATEGORIA_MOTO.search(descricao):
-        return "Moto"
-    if RE_CATEGORIA_AGRICOLA.search(descricao):
-        return "Agrícola"
-    if RE_CATEGORIA_CAMINHAO.search(descricao):
-        return "Caminhão"
-    return "Passeio"
+from filtro_pneu import eh_pneu_de_verdade, classificar_categoria
 
 
 # ── Banco (Supabase/Postgres) ────────────────────────────────────────────

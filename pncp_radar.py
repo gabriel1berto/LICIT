@@ -12,14 +12,21 @@ Variáveis de ambiente (GitHub Secrets):
 """
 
 import os
-import re
 import smtplib
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 
 from curl_cffi import requests
+
+# filtro compartilhado com o pipeline de coleta — ver analise/filtro_pneu.py.
+# Zero dependência pesada nesse módulo (só `re`), então não puxa psycopg2/etc
+# pra dentro do requirements_radar.txt.
+sys.path.insert(0, str(Path(__file__).parent / "analise"))
+from filtro_pneu import classificar_pneu, eh_pneu_de_verdade, classificar_categoria
 
 # ── CONFIGURAÇÃO ───────────────────────────────────────────────────────────────
 
@@ -83,55 +90,30 @@ SEM_PORTAL_EXTERNO = {
 }
 
 
-# ── PRÉ-FILTRO DE OBJETIVO ────────────────────────────────────────────────────
+# ── PRÉ-FILTRO DE OBJETIVO (nível processo) ─────────────────────────────────
+# Substituído em 07/jul/2026 pelo classificar_pneu() de analise/filtro_pneu.py —
+# mesma lógica usada pelo coletor de dados (fase 1), validada e mantida num só
+# lugar. Ver "Diferenças" no card Notion "PNCP Radar", v10 do Log de Evolução.
 
-# Processos cujo objetivo é serviço, não compra de pneu — descartar antes do detalhe
-_OBJ_SERVICE = [
-    re.compile(r'presta[çc][aã]o\s+de\s+servi[çc]', re.I),
-    re.compile(r'\bservi[çc]os?\s+de\s+(?:borracharia|recauchutagem|vulcaniza|substitui)', re.I),
-    re.compile(r'loca[çc][aã]o\s+de\s+(?:trator|m[áa]quina|equipamento)', re.I),
-]
+_ROTULOS_DESCARTAR = {"adjetivo_provavel", "maquina_pesada_provavel", "servico_provavel"}
 
 
-def is_tire_purchase(description: str) -> bool:
-    """False se o objetivo é claramente serviço e não compra de pneu."""
-    for pat in _OBJ_SERVICE:
-        if pat.search(description or ""):
-            return False
-    return True
+def is_tire_purchase(titulo: str, description: str) -> bool:
+    """False se classificar_pneu() rotula como claramente não-compra-de-pneu."""
+    return classificar_pneu(titulo, description) not in _ROTULOS_DESCARTAR
 
 
-# ── CLASSIFICAÇÃO DE ITENS ─────────────────────────────────────────────────────
-
-# Padrões que identificam pneus mesmo sem a palavra "pneu" na descrição
-_TIRE_POSITIVE = [
-    re.compile(r'\d{3}/\d{2}'),                    # medida: 175/70 (padrão pneu)
-    re.compile(r'\bcâmara\s+de\s+ar\b', re.I),    # câmara de ar
-]
-
-# Padrões que descartam o item (pneu aparece mas NÃO é um pneu)
-_TIRE_NEGATIVE = [
-    re.compile(r'carrinho\s+de\s+m[aã]o', re.I),
-    re.compile(r'carro\s+de\s+m[aã]o', re.I),
-    re.compile(r'\bcarriola\b', re.I),
-    re.compile(r'\bmaca\b', re.I),
-    re.compile(r'cadeira\s+de\s+rodas', re.I),
-    re.compile(r'\bbrinquedo\b', re.I),
-]
+# ── CLASSIFICAÇÃO DE ITENS (nível item) ─────────────────────────────────────
+# Substituído em 07/jul/2026 pelo eh_pneu_de_verdade() de analise/filtro_pneu.py —
+# o filtro antigo daqui não tinha a correção do bug de "veículo inteiro" (caminhão/
+# ambulância citando medida de pneu de fábrica), não exigia início da descrição
+# começar com "pneu"/"câmara", e a lista de exclusão de máquina/serviço era bem
+# menor que a validada. Era a causa provável dos falsos positivos no email.
 
 
 def is_tire_item(desc: str) -> bool:
     """True se o item é um pneu ou câmara de ar automotivo/industrial legítimo."""
-    if not desc:
-        return False
-    for pat in _TIRE_NEGATIVE:
-        if pat.search(desc):
-            return False
-    for pat in _TIRE_POSITIVE:
-        if pat.search(desc):
-            return True
-    # Tem "pneu" mas sem sinal claro ->inclui (conservador)
-    return "pneu" in desc.lower()
+    return eh_pneu_de_verdade(desc)
 
 
 # ── HELPERS ────────────────────────────────────────────────────────────────────
@@ -631,7 +613,7 @@ def main() -> None:
 
     # 2. Pré-filtro: descarta serviços e não-compras antes de buscar detalhes
     n_before = len(all_items)
-    all_items = [i for i in all_items if is_tire_purchase(i.get("description", ""))]
+    all_items = [i for i in all_items if is_tire_purchase(i.get("title", ""), i.get("description", ""))]
     print(f"Pré-filtro objetivo: {n_before} ->{len(all_items)} processos")
 
     # 3. Filtra por data

@@ -49,7 +49,6 @@ import argparse
 import json
 import logging
 import os
-import re
 import shutil
 import sys
 import time
@@ -108,51 +107,9 @@ logging.basicConfig(
 log = logging.getLogger("coletor_pncp")
 
 
-# ── Classificação "é pneu de verdade?" (título + descrição, ver nota no topo) ──
+# ── Classificação "é pneu de verdade?" — módulo único, ver filtro_pneu.py ──
 
-RE_MAQUINA_PESADA = re.compile(
-    r"carregadeira|motoniveladora|retroescavadeira|escavadeira|rolo\s+compactador|"
-    r"cadeira\s+de\s+rodas|trator\b",
-    re.IGNORECASE,
-)
-RE_SERVICO = re.compile(
-    r"recapagem|vulcaniza[çc][ãa]o|alinhamento|balanceamento|conserto|"
-    r"borracharia|recauchutagem|manuten[çc][ãa]o\s+(preventiva|corretiva)?\s*(do|de)\s+ve[íi]culo",
-    re.IGNORECASE,
-)
-RE_AQUISICAO = re.compile(
-    r"aquisi[çc][ãa]o|compra|fornecimento|registro\s+de\s+pre[çc]o",
-    re.IGNORECASE,
-)
-RE_PNEU_SUBSTANTIVO = re.compile(r"\bpneus?\b", re.IGNORECASE)
-RE_PNEUMATICO_ADJETIVO = re.compile(r"pneum[áa]tic[ao]", re.IGNORECASE)
-
-
-def classificar_pneu(titulo: str, descricao: str) -> str:
-    """Rótulo de confiança sobre o texto do processo (título+descrição).
-
-    Mais fraco que o filtro item-a-item do ComprasGOV — aqui é heurística
-    sobre texto corrido, não campo estruturado de item. Retorna um rótulo,
-    não descarta nada (decisão de cortar fica pra análise).
-    """
-    texto = f"{titulo or ''} {descricao or ''}"
-
-    tem_pneu_substantivo = bool(RE_PNEU_SUBSTANTIVO.search(texto))
-    tem_pneumatico_adjetivo = bool(RE_PNEUMATICO_ADJETIVO.search(texto))
-
-    if not tem_pneu_substantivo and tem_pneumatico_adjetivo:
-        return "adjetivo_provavel"  # só "pneumático" solto, sem "pneu(s)" como substantivo
-
-    if RE_MAQUINA_PESADA.search(texto):
-        return "maquina_pesada_provavel"
-
-    if RE_SERVICO.search(texto) and not RE_AQUISICAO.search(texto):
-        return "servico_provavel"
-
-    if tem_pneu_substantivo:
-        return "compra_provavel"
-
-    return "indefinido"  # tem "pneu" em algum lugar (a busca já garante isso) mas não bateu nos outros padrões
+from filtro_pneu import classificar_pneu
 
 
 # ── Banco (Supabase/Postgres) ────────────────────────────────────────────
