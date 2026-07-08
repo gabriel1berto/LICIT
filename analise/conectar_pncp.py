@@ -83,7 +83,7 @@ def cobertura_pct() -> tuple[int, int, float]:
 
 
 def _classificar_tipo(modalidade: str) -> str:
-    if not modalidade:
+    if not isinstance(modalidade, str) or not modalidade:
         return "Outro"
     m = modalidade.lower()
     if m.startswith("pregão"):
@@ -93,6 +93,16 @@ def _classificar_tipo(modalidade: str) -> str:
     if m.startswith("concorrência") or m.startswith("concorrencia"):
         return "Concorrência"
     return "Outro"
+
+
+VALOR_UNITARIO_TETO_SANIDADE = 50_000
+# achado 08/jul/26 auditando outlier em "R$ MG Passeio": item de Coromandel/MG com
+# valor_unitario_estimado = R$17,3 milhões (pneu não existe a esse preço — erro de
+# digitação do órgão na fonte, PNCP não valida). p99 real de pneu Passeio é ~R$7,7k;
+# nenhum pneu de venda unitária (mesmo OTR gigante de mineração) passa de R$50k — teto
+# generoso o bastante pra nunca cortar item real, mas corta todo lixo visto na auditoria
+# (R$17,3M, R$5,8M, R$2,1M, R$1,5M... todos exames manuais confirmaram erro de dado, não
+# pneu caro de verdade).
 
 
 def carregar_base_pncp() -> pd.DataFrame:
@@ -106,6 +116,7 @@ def carregar_base_pncp() -> pd.DataFrame:
                valor_unitario_estimado, quantidade, tem_resultado, categoria
         FROM itens
         WHERE eh_pneu = TRUE
+          AND (valor_unitario_estimado IS NULL OR valor_unitario_estimado <= 50000)
         """,
         ENGINE,
     )
@@ -119,6 +130,19 @@ def carregar_base_pncp() -> pd.DataFrame:
         """,
         ENGINE,
     )
+    # achado 08/jul/26: retificação de edital no PNCP gera numero_controle_pncp novo pro
+    # MESMO processo (mesmo órgão, mesma data de abertura, mesmo valor total) — 500 grupos
+    # duplicados achados (1.406 de 17.660 processos, ~8%), ex: Araxá/MG "-000101" e "-000209"
+    # idênticos. Sem dedup, cada duplicata dobra o valor e a contagem de processo no
+    # dashboard. Mantém só 1 por (órgão, data abertura, valor total) — o de menor
+    # numero_controle_pncp (mais antigo, versão original antes da retificação).
+    detalhes = detalhes.sort_values("numero_controle_pncp")
+    _cnpj = detalhes["numero_controle_pncp"].str.split("-").str[0]
+    chave_dedup = pd.DataFrame({
+        "cnpj": _cnpj, "data": detalhes["data_abertura_proposta"], "valor": detalhes["valor_total_estimado"],
+    }, index=detalhes.index)
+    mantidos = ~chave_dedup.duplicated(keep="first") | chave_dedup["data"].isna() | chave_dedup["valor"].isna()
+    detalhes = detalhes[mantidos]
 
     # 1 resultado por item: menor ordem_classificacao_srp (1º colocado / vencedor)
     resultados = pd.read_sql_query(
@@ -138,7 +162,9 @@ def carregar_base_pncp() -> pd.DataFrame:
         ENGINE,
     )
 
-    df = itens.merge(detalhes, on="numero_controle_pncp", how="left")
+    # inner, não left — "detalhes" já teve a dedup de processo republicado acima; left
+    # traria de volta os itens do numero_controle_pncp duplicado que a dedup removeu.
+    df = itens.merge(detalhes, on="numero_controle_pncp", how="inner")
     df = df.merge(resultados, on=["numero_controle_pncp", "numero_item"], how="left")
 
     df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")

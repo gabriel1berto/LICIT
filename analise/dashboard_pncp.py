@@ -47,15 +47,33 @@ COR_INK_DARK  = "#c3c2b7"
 COR_GRID_DARK = "#3a3a37"
 
 
-def fundo_transparente(fig: go.Figure) -> go.Figure:
+def fundo_transparente(fig: go.Figure, tickformat_x: bool = True) -> go.Figure:
+    """tickformat_x=False pra eixo X categórico (mês, categoria) — aplicar formato numérico
+    (",.0f") num eixo de texto renderiza o literal ",0f" ao lado de cada rótulo (achado
+    08/jul/26 no gráfico de tendência mensal por medida)."""
     fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color=COR_INK_DARK)
-    fig.update_xaxes(gridcolor=COR_GRID_DARK, zerolinecolor=COR_GRID_DARK, tickformat=",.0f")
+    if tickformat_x:
+        fig.update_xaxes(gridcolor=COR_GRID_DARK, zerolinecolor=COR_GRID_DARK, tickformat=",.0f")
+    else:
+        fig.update_xaxes(gridcolor=COR_GRID_DARK, zerolinecolor=COR_GRID_DARK)
     fig.update_yaxes(gridcolor=COR_GRID_DARK, zerolinecolor=COR_GRID_DARK, tickformat=",.0f")
     return fig
 
 
-def fmt0(v: float) -> str:
-    return f"{v:,.0f}"
+def fmt_abrev(v: float) -> str:
+    """Abrevia valor grande pra leitura rápida em tabela: 1,2 mi / 850 mil / 234."""
+    if pd.isna(v):
+        return "—"
+    sinal = "-" if v < 0 else ""
+    v = abs(v)
+    if v >= 1_000_000:
+        s, sufixo = f"{v / 1_000_000:,.1f}", " mi"
+    elif v >= 1_000:
+        s, sufixo = f"{v / 1_000:,.0f}", " mil"
+    else:
+        s, sufixo = f"{v:,.0f}", ""
+    s = s.replace(",", "@").replace(".", ",").replace("@", ".")  # troca separador en-US -> pt-BR sem colisão
+    return f"{sinal}{s}{sufixo}"
 
 
 @st.cache_data(ttl=300)
@@ -188,8 +206,12 @@ def main() -> None:
         cols_ordenadas = ["Estado", "Cobertura %"] + [c for c in tabelao.columns if c not in ("Estado", "Cobertura %")]
         tabelao = tabelao[cols_ordenadas]
 
+        colunas_r_tabelao = ["Valor Licitado"] + [f"{a} (R$)" for a in CATEGORIAS_ABREV.values()]
+        tabelao_fmt = tabelao.copy()
+        for c in colunas_r_tabelao:
+            tabelao_fmt[c] = tabelao_fmt[c].apply(fmt_abrev)
         st.dataframe(
-            tabelao, use_container_width=True, hide_index=True,
+            tabelao_fmt, use_container_width=True, hide_index=True,
             column_config={"Cobertura %": st.column_config.ProgressColumn("Cobertura %", min_value=0, max_value=100, format="%.0f%%")},
         )
         st.caption(
@@ -260,18 +282,27 @@ def main() -> None:
             tm_pivot["Desconto med. Pregão (%)"] = None
 
         tm_pivot = tm_pivot.sort_values("Pregão", ascending=False, na_position="last")
-        st.dataframe(
-            tm_pivot.reset_index().rename(columns={"uf": "UF", "Dispensa": "Ticket Dispensa (R$)", "Pregão": "Ticket Pregão (R$)"}),
-            use_container_width=True, hide_index=True,
-        )
+        tm_pivot_fmt = tm_pivot.reset_index().rename(columns={"uf": "UF", "Dispensa": "Ticket Dispensa (R$)", "Pregão": "Ticket Pregão (R$)"})
+        for c in ["Ticket Dispensa (R$)", "Ticket Pregão (R$)"]:
+            tm_pivot_fmt[c] = tm_pivot_fmt[c].apply(fmt_abrev)
+        st.dataframe(tm_pivot_fmt, use_container_width=True, hide_index=True)
         st.caption("Desconto mediano: itens com estimado + homologado, exclui preço de referência simbólico (R$0,01).")
 
         st.divider()
-        st.subheader("Fornecedor dominante por UF")
+        st.subheader("Fornecedor dominante")
         vencidos_geo = df[df["tem_resultado"] == True].dropna(subset=["nome_fornecedor"])  # noqa: E712
         if vencidos_geo.empty:
             st.info("Sem item com resultado nesse filtro.")
         else:
+            por_forn_br = vencidos_geo.groupby("nome_fornecedor", as_index=False)["valor_total_resultado"].sum()
+            total_br = por_forn_br["valor_total_resultado"].sum()
+            dominante_br = por_forn_br.sort_values("valor_total_resultado", ascending=False).iloc[0]
+            pct_br = dominante_br["valor_total_resultado"] / total_br * 100 if total_br else 0
+
+            col_br1, col_br2 = st.columns(2)
+            col_br1.metric("Fornecedor dominante — Brasil", dominante_br["nome_fornecedor"])
+            col_br2.metric("% do valor ganho nacional", f"{pct_br:.0f}%", help=f"R$ {fmt_abrev(dominante_br['valor_total_resultado'])} de R$ {fmt_abrev(total_br)} nos filtros atuais")
+
             por_uf_forn = vencidos_geo.groupby(["uf", "nome_fornecedor"], as_index=False)["valor_total_resultado"].sum()
             total_uf = por_uf_forn.groupby("uf")["valor_total_resultado"].transform("sum")
             por_uf_forn["participacao_pct"] = (por_uf_forn["valor_total_resultado"] / total_uf * 100).round().astype("int64")
@@ -280,14 +311,15 @@ def main() -> None:
                            .groupby("uf").first().reset_index()
                            .sort_values("valor_total_resultado", ascending=False)
             )
-            dominante["valor_total_resultado"] = dominante["valor_total_resultado"].round().astype("int64")
+            dominante["valor_total_resultado"] = dominante["valor_total_resultado"].apply(fmt_abrev)
             dominante = dominante.rename(columns={
                 "uf": "UF", "nome_fornecedor": "Fornecedor dominante",
                 "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% do valor da UF",
             })
+            st.caption("Por UF:")
             st.dataframe(dominante, use_container_width=True, hide_index=True)
             st.caption(
-                "Fornecedor com maior valor ganho (itens com resultado) por UF, nos filtros atuais. "
+                "Fornecedor com maior valor ganho (itens com resultado), Brasil e por UF, nos filtros atuais. "
                 "Amostra parcial — só processos já com detalhe coletado. Marca/modelo do produto não é "
                 "campo público do PNCP (fica em proposta anexa, exige login por processo) — não escalável hoje."
             )
@@ -314,14 +346,64 @@ def main() -> None:
             figm.update_traces(marker_color="#2a78d6")
             fundo_transparente(figm)
             st.plotly_chart(figm, use_container_width=True)
-            st.dataframe(
-                top_medidas.rename(columns={"medida_extraida": "Medida", "n_itens": "Nº itens", "valor_total": "Valor total (R$)"}),
-                use_container_width=True, hide_index=True,
-            )
+            top_medidas_fmt = top_medidas.rename(columns={"medida_extraida": "Medida", "n_itens": "Nº itens", "valor_total": "Valor total (R$)"})
+            top_medidas_fmt["Valor total (R$)"] = top_medidas_fmt["Valor total (R$)"].apply(fmt_abrev)
+            st.dataframe(top_medidas_fmt, use_container_width=True, hide_index=True)
             st.caption(
                 f"Medida extraída da descrição em {cobertura_medida:.0f}% dos itens ({len(com_medida)}/{len(df)}) — "
                 "resto é descrição genérica sem medida no texto, ou câmara/agrícola (formato de medida diferente, não capturado)."
             )
+
+            st.divider()
+            st.subheader("Fornecedor dominante por medida")
+            venc_medida = com_medida[com_medida["tem_resultado"] == True].dropna(subset=["nome_fornecedor"])  # noqa: E712
+            top_medidas_nomes_geral = top_medidas["medida_extraida"].tolist()
+            if venc_medida.empty:
+                st.info("Sem item com resultado + medida nesse filtro.")
+            else:
+                por_med_forn = (
+                    venc_medida[venc_medida["medida_extraida"].isin(top_medidas_nomes_geral)]
+                    .groupby(["medida_extraida", "nome_fornecedor"], as_index=False)["valor_total_resultado"].sum()
+                )
+                total_med = por_med_forn.groupby("medida_extraida")["valor_total_resultado"].transform("sum")
+                por_med_forn["participacao_pct"] = (por_med_forn["valor_total_resultado"] / total_med * 100).round().astype("int64")
+                dom_medida = (
+                    por_med_forn.sort_values("valor_total_resultado", ascending=False)
+                                .groupby("medida_extraida").first().reset_index()
+                )
+                dom_medida["valor_total_resultado"] = dom_medida["valor_total_resultado"].apply(fmt_abrev)
+                dom_medida = dom_medida.rename(columns={
+                    "medida_extraida": "Medida", "nome_fornecedor": "Fornecedor dominante",
+                    "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% da medida",
+                }).sort_values("% da medida", ascending=False)
+                st.dataframe(dom_medida, use_container_width=True, hide_index=True)
+                st.caption(
+                    "Quem mais vende cada medida (top 15 medidas), nos filtros atuais. Útil pra identificar "
+                    "medida com fornecedor pouco concentrado (mais espaço pra entrar) x medida já dominada."
+                )
+
+            st.divider()
+            st.subheader("Tendência mensal — top 5 medidas")
+            top5_medidas = top_medidas.sort_values("n_itens", ascending=False).head(5)["medida_extraida"].tolist()
+            tend_medida = (
+                com_medida[com_medida["medida_extraida"].isin(top5_medidas)]
+                .dropna(subset=["ano_mes"])
+                .groupby(["ano_mes", "medida_extraida"], as_index=False)
+                .size().rename(columns={"size": "n_itens"})
+                .sort_values("ano_mes")
+            )
+            if tend_medida.empty:
+                st.info("Sem dado de data suficiente pra tendência mensal nesse filtro.")
+            else:
+                figt = px.line(
+                    tend_medida, x="ano_mes", y="n_itens", color="medida_extraida", markers=True,
+                    labels={"ano_mes": "Mês", "n_itens": "Nº de itens pedidos", "medida_extraida": "Medida"},
+                    title="Evolução mensal de demanda — top 5 medidas mais pedidas",
+                )
+                figt.update_layout(legend_title_text="")
+                fundo_transparente(figt, tickformat_x=False)
+                st.plotly_chart(figt, use_container_width=True)
+                st.caption("Mês = data de abertura de proposta. Ajuda a ver medida em alta x em queda pra priorizar estoque.")
 
         st.divider()
         st.subheader("Preço final vendido — medida x UF")
@@ -387,7 +469,7 @@ def main() -> None:
                     "valor_total", ascending=False
                 ).reset_index(drop=True)
                 muni_tab.columns = ["Município", "UF", "Processos", "Valor (R$)"]
-                muni_tab["Valor (R$)"] = muni_tab["Valor (R$)"].apply(lambda v: f"{v:,.0f}")
+                muni_tab["Valor (R$)"] = muni_tab["Valor (R$)"].apply(fmt_abrev)
                 st.dataframe(muni_tab, use_container_width=True, hide_index=True, height=600)
 
     # ── Aba Sazonalidade ─────────────────────────────────────────────────
@@ -415,7 +497,7 @@ def main() -> None:
             title=f"Sazonalidade mensal — {metrica} por {granularidade} (PNCP direto)",
         )
         fig2.update_layout(legend_title_text="")
-        fundo_transparente(fig2)
+        fundo_transparente(fig2, tickformat_x=False)
         st.plotly_chart(fig2, use_container_width=True)
 
     # ── Aba Fornecedores e Preço ─────────────────────────────────────────
@@ -455,7 +537,7 @@ def main() -> None:
                 columns={"nome_fornecedor": "Fornecedor", "n_processos": "Processos vencidos",
                          "valor_ganho": "Valor ganho (R$)", "participacao_pct": "% do total"}
             )
-            tabela_forn["Valor ganho (R$)"] = tabela_forn["Valor ganho (R$)"].apply(fmt0)
+            tabela_forn["Valor ganho (R$)"] = tabela_forn["Valor ganho (R$)"].apply(fmt_abrev)
             tabela_forn["% do total"] = tabela_forn["% do total"].apply(lambda v: f"{v:.0f}%")
             st.dataframe(tabela_forn, use_container_width=True, hide_index=True)
 
@@ -480,7 +562,7 @@ def main() -> None:
                 title="Desconto mediano (estimado → homologado) por categoria de produto",
             )
             fig4.update_layout(showlegend=False)
-            fundo_transparente(fig4)
+            fundo_transparente(fig4, tickformat_x=False)
             st.plotly_chart(fig4, use_container_width=True)
 
         st.divider()
@@ -495,7 +577,7 @@ def main() -> None:
             title="Valor médio por item, por categoria de produto",
         )
         fig5.update_layout(showlegend=False)
-        fundo_transparente(fig5)
+        fundo_transparente(fig5, tickformat_x=False)
         st.plotly_chart(fig5, use_container_width=True)
 
 
