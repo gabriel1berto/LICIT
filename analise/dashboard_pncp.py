@@ -76,6 +76,15 @@ def fmt_abrev(v: float) -> str:
     return f"{sinal}{s}{sufixo}"
 
 
+def para_mil(v: float) -> float | None:
+    """Valor em R$ mil, numérico de verdade (não string) — achado 08/jul/26: colunas
+    formatadas como texto ("8 mil") quebravam ordenação/filtro nativo do st.dataframe
+    (vira sort alfabético, não numérico). Cabeçalho da coluna deve dizer "(R$ mil)"."""
+    if pd.isna(v):
+        return None
+    return round(v / 1000, 1)
+
+
 @st.cache_data(ttl=300)
 def carregar_base() -> pd.DataFrame:
     df = carregar_base_pncp()
@@ -242,21 +251,21 @@ def main() -> None:
 
         tabelao = pd.DataFrame(index=pivot_n.index)
         tabelao["Total Processos"] = pivot_n[list(CATEGORIAS_ABREV)].sum(axis=1).astype(int)
-        tabelao["Valor Licitado"]  = pivot_v[list(CATEGORIAS_ABREV)].sum(axis=1).round().astype("int64")
+        tabelao["Valor Licitado (R$ mil)"] = pivot_v[list(CATEGORIAS_ABREV)].sum(axis=1).round().astype("int64")
         for cat, abrev in CATEGORIAS_ABREV.items():
-            tabelao[f"{abrev} (n)"]  = pivot_n[cat].astype(int)
-            tabelao[f"{abrev} (R$)"] = pivot_v[cat].round().astype("int64")
-        tabelao = tabelao.sort_values("Valor Licitado", ascending=False).reset_index().rename(columns={"uf": "Estado"})
+            tabelao[f"{abrev} (n)"] = pivot_n[cat].astype(int)
+            tabelao[f"{abrev} (R$ mil)"] = pivot_v[cat].round().astype("int64")
+        tabelao = tabelao.sort_values("Valor Licitado (R$ mil)", ascending=False).reset_index().rename(columns={"uf": "Estado"})
 
         cov_uf = carregar_cobertura_uf().set_index("uf")["cobertura_pct"]
         tabelao["Cobertura %"] = tabelao["Estado"].map(cov_uf)
         cols_ordenadas = ["Estado", "Cobertura %"] + [c for c in tabelao.columns if c not in ("Estado", "Cobertura %")]
         tabelao = tabelao[cols_ordenadas]
 
-        colunas_r_tabelao = ["Valor Licitado"] + [f"{a} (R$)" for a in CATEGORIAS_ABREV.values()]
+        colunas_r_tabelao = ["Valor Licitado (R$ mil)"] + [f"{a} (R$ mil)" for a in CATEGORIAS_ABREV.values()]
         tabelao_fmt = tabelao.copy()
         for c in colunas_r_tabelao:
-            tabelao_fmt[c] = tabelao_fmt[c].apply(fmt_abrev)
+            tabelao_fmt[c] = tabelao_fmt[c].apply(para_mil)
         st.dataframe(
             tabelao_fmt, use_container_width=True, hide_index=True,
             column_config={"Cobertura %": st.column_config.ProgressColumn("Cobertura %", min_value=0, max_value=100, format="%.0f%%")},
@@ -330,9 +339,9 @@ def main() -> None:
                 tm_pivot["Desconto med. Pregão (%)"] = None
 
             tm_pivot = tm_pivot.sort_values("Pregão", ascending=False, na_position="last")
-            tm_pivot_fmt = tm_pivot.reset_index().rename(columns={"uf": "UF", "Dispensa": "Ticket Dispensa (R$)", "Pregão": "Ticket Pregão (R$)"})
-            for c in ["Ticket Dispensa (R$)", "Ticket Pregão (R$)"]:
-                tm_pivot_fmt[c] = tm_pivot_fmt[c].apply(fmt_abrev)
+            tm_pivot_fmt = tm_pivot.reset_index().rename(columns={"uf": "UF", "Dispensa": "Ticket Dispensa (R$ mil)", "Pregão": "Ticket Pregão (R$ mil)"})
+            for c in ["Ticket Dispensa (R$ mil)", "Ticket Pregão (R$ mil)"]:
+                tm_pivot_fmt[c] = tm_pivot_fmt[c].apply(para_mil)
             st.dataframe(tm_pivot_fmt, use_container_width=True, hide_index=True, height=350)
             st.caption("Desconto mediano: exclui preço de referência simbólico (R$0,01).")
 
@@ -347,10 +356,10 @@ def main() -> None:
             top15_br = por_forn_br.sort_values("valor_total_resultado", ascending=False).head(15).copy()
             top15_br["participacao_pct"] = (top15_br["valor_total_resultado"] / total_br * 100).round().astype("int64")
             top15_br["Ranking"] = range(1, len(top15_br) + 1)
-            top15_br["valor_total_resultado"] = top15_br["valor_total_resultado"].apply(fmt_abrev)
+            top15_br["valor_total_resultado"] = top15_br["valor_total_resultado"].apply(para_mil)
             top15_br = top15_br.rename(columns={
-                "nome_fornecedor": "Fornecedor", "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% do total BR",
-            })[["Ranking", "Fornecedor", "Valor ganho (R$)", "% do total BR"]]
+                "nome_fornecedor": "Fornecedor", "valor_total_resultado": "Valor ganho (R$ mil)", "participacao_pct": "% do total BR",
+            })[["Ranking", "Fornecedor", "Valor ganho (R$ mil)", "% do total BR"]]
 
             por_uf_forn = vencidos_geo.groupby(["uf", "nome_fornecedor"], as_index=False)["valor_total_resultado"].sum()
             total_uf = por_uf_forn.groupby("uf")["valor_total_resultado"].transform("sum")
@@ -360,11 +369,11 @@ def main() -> None:
                            .groupby("uf").head(15)
             )
             top15_uf["Ranking"] = top15_uf.groupby("uf").cumcount() + 1
-            top15_uf["valor_total_resultado"] = top15_uf["valor_total_resultado"].apply(fmt_abrev)
+            top15_uf["valor_total_resultado"] = top15_uf["valor_total_resultado"].apply(para_mil)
             top15_uf = top15_uf.rename(columns={
                 "uf": "UF", "nome_fornecedor": "Fornecedor",
-                "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% do valor da UF",
-            })[["UF", "Ranking", "Fornecedor", "Valor ganho (R$)", "% do valor da UF"]]
+                "valor_total_resultado": "Valor ganho (R$ mil)", "participacao_pct": "% do valor da UF",
+            })[["UF", "Ranking", "Fornecedor", "Valor ganho (R$ mil)", "% do valor da UF"]]
 
             col_forn_br, col_forn_uf = st.columns(2)
             with col_forn_br:
@@ -486,8 +495,8 @@ def main() -> None:
                 muni_tab = muni[["municipio", "uf", "n_processos", "valor_total"]].sort_values(
                     "valor_total", ascending=False
                 ).reset_index(drop=True)
-                muni_tab.columns = ["Município", "UF", "Processos", "Valor (R$)"]
-                muni_tab["Valor (R$)"] = muni_tab["Valor (R$)"].apply(fmt_abrev)
+                muni_tab.columns = ["Município", "UF", "Processos", "Valor (R$ mil)"]
+                muni_tab["Valor (R$ mil)"] = muni_tab["Valor (R$ mil)"].apply(para_mil)
                 st.dataframe(muni_tab, use_container_width=True, hide_index=True, height=600)
 
     # ── Aba Produto ──────────────────────────────────────────────────────
@@ -512,8 +521,8 @@ def main() -> None:
                     "resto é descrição genérica sem medida, ou câmara/agrícola (formato diferente, não capturado)."
                 )
             with col_medida_tab:
-                top_medidas_fmt = top_medidas.rename(columns={"medida_extraida": "Medida", "n_itens": "Nº itens", "valor_total": "Valor total (R$)"})
-                top_medidas_fmt["Valor total (R$)"] = top_medidas_fmt["Valor total (R$)"].apply(fmt_abrev)
+                top_medidas_fmt = top_medidas.rename(columns={"medida_extraida": "Medida", "n_itens": "Nº itens", "valor_total": "Valor total (R$ mil)"})
+                top_medidas_fmt["Valor total (R$ mil)"] = top_medidas_fmt["Valor total (R$ mil)"].apply(para_mil)
                 st.dataframe(top_medidas_fmt, use_container_width=True, hide_index=True, height=480)
 
             st.divider()
@@ -535,10 +544,10 @@ def main() -> None:
                         por_med_forn.sort_values("valor_total_resultado", ascending=False)
                                     .groupby("medida_extraida").first().reset_index()
                     )
-                    dom_medida["valor_total_resultado"] = dom_medida["valor_total_resultado"].apply(fmt_abrev)
+                    dom_medida["valor_total_resultado"] = dom_medida["valor_total_resultado"].apply(para_mil)
                     dom_medida = dom_medida.rename(columns={
                         "medida_extraida": "Medida", "nome_fornecedor": "Fornecedor dominante",
-                        "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% da medida",
+                        "valor_total_resultado": "Valor ganho (R$ mil)", "participacao_pct": "% da medida",
                     }).sort_values("% da medida", ascending=False)
                     st.dataframe(dom_medida, use_container_width=True, hide_index=True, height=450)
                     st.caption(
@@ -636,10 +645,9 @@ def main() -> None:
                 st.subheader("Recorrência — processos vencidos")
                 tabela_forn = conc[["nome_fornecedor", "n_processos", "valor_ganho", "participacao_pct"]].rename(
                     columns={"nome_fornecedor": "Fornecedor", "n_processos": "Processos vencidos",
-                             "valor_ganho": "Valor ganho (R$)", "participacao_pct": "% do total"}
+                             "valor_ganho": "Valor ganho (R$ mil)", "participacao_pct": "% do total"}
                 )
-                tabela_forn["Valor ganho (R$)"] = tabela_forn["Valor ganho (R$)"].apply(fmt_abrev)
-                tabela_forn["% do total"] = tabela_forn["% do total"].apply(lambda v: f"{v:.0f}%")
+                tabela_forn["Valor ganho (R$ mil)"] = tabela_forn["Valor ganho (R$ mil)"].apply(para_mil)
                 st.dataframe(tabela_forn, use_container_width=True, hide_index=True, height=480)
 
         st.divider()
