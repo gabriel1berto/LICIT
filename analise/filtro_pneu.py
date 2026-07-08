@@ -35,9 +35,16 @@ RE_PREFIXO_IGNORAR = (
     r"(?:(?:aquisi[çc][ãa]o|fornecimento|contrata[çc][ãa]o|compra)\s+"
     r"(?:parcelada\s+)?(?:de\s+)?)?"                                    # "aquisição de "
 )
-RE_PNEU_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}pneus?\b", re.IGNORECASE)
+# "pneumático(s)" é o nome formal/técnico do produto em bastante edital ("PNEUMÁTICO PARA
+# AUTOMÓVEL LEVE...", "PNEUMÁTICO NOVO DE 1ª LINHA..."), não só adjetivo (bug histórico
+# "cadeira pneumática"/"sistema pneumático") — mas como âncora exige ser a 1ª palavra do
+# ITEM (não do processo), "pneumático" no início de um item de catálogo é sempre o produto
+# em si, nunca "cadeira pneumática" (que começaria com "cadeira", não com "pneumático").
+RE_PNEU_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}(?:pneus?|pneum[áa]ticos?)\b", re.IGNORECASE)
 RE_CAMARA_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]mara\s+(de\s+)?ar\b", re.IGNORECASE)
-RE_MEDIDA_R = re.compile(r"\d{3}\s*/\s*\d{2}\s*[Rr]\s*\d{2}\b")
+# aceita barra opcional antes do R ("215/75/R17.5") e sufixo de letra colado no aro
+# ("R14C" — C de comercial/reforçado, sem espaço antes) — os 2 vistos em catálogo real.
+RE_MEDIDA_R = re.compile(r"\d{3}\s*/\s*\d{2}\s*/?\s*[Rr]\s*\d{2}(?:[.,]\d)?[A-Za-z]?\b")
 # bug achado jul/2026: veículo inteiro (caminhão/ambulância/pick-up/van) que só CITA a
 # medida do pneu de fábrica batia em RE_MEDIDA_R e virava "eh_pneu=1" — item de
 # R$100k-800k/unidade (o veículo), não o pneu. Mesma lógica de âncora no início já usada
