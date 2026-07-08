@@ -430,13 +430,16 @@ def main() -> None:
             )
             tab_mu["preco_mediano_nacional"] = tab_mu["medida_extraida"].map(mediana_nacional)
             tab_mu["premio_pct"] = (tab_mu["preco_mediano"] / tab_mu["preco_mediano_nacional"] - 1) * 100
+            # achado 08/jul/26: piso de n>=3 escondia estado com pouca amostra — usuário quer
+            # ver todos os estados, mesmo com 1-2 vendas. Mostra tudo, confiança (coluna já
+            # existente) comunica o risco em vez do dado sumir da tela.
             tab_mu["confianca"] = pd.cut(tab_mu["n"], bins=[0, 4, 14, float("inf")], labels=["baixa", "média", "alta"])
-            tab_mu = tab_mu[tab_mu["n"] >= 3].sort_values(["medida_extraida", "premio_pct"], ascending=[True, False])
+            tab_mu = tab_mu.sort_values(["medida_extraida", "premio_pct"], ascending=[True, False])
 
             col_ref, col_heat = st.columns([1, 1])
             with col_ref:
                 if tab_mu.empty:
-                    st.info("Nenhuma combinação medida x UF com 3+ amostras ainda — normal com 20% de cobertura, cresce com a coleta.")
+                    st.info("Nenhum item com medida + preço final nesse filtro.")
                 else:
                     tab_mu_fmt = tab_mu.copy()
                     tab_mu_fmt["preco_mediano"] = tab_mu_fmt["preco_mediano"].round(2)
@@ -450,7 +453,7 @@ def main() -> None:
                         }),
                         use_container_width=True, hide_index=True, height=450,
                     )
-                st.caption("Só medida x UF com 3+ vendas. Top 8 medidas mais pedidas nacionalmente.")
+                st.caption("Todas as UF com pelo menos 1 venda. Coluna Confiança avisa amostra pequena. Top 8 medidas mais pedidas nacionalmente.")
 
             with col_heat:
                 medida_escolhida = st.selectbox("Medida do mapa de calor:", ["Todas as medidas"] + top_medidas_nomes_8.tolist())
@@ -467,7 +470,7 @@ def main() -> None:
                     titulo_heat = f"Prêmio regional — {medida_escolhida}"
                     legenda_n = "Nº vendas"
                 if heat.empty:
-                    st.info("Sem amostra suficiente (3+ vendas) pra essa medida nos filtros atuais.")
+                    st.info("Sem venda dessa medida nos filtros atuais.")
                 else:
                     heat = heat.copy()
                     heat["premio_label"] = heat["premio_pct"].apply(lambda v: f"{v:+.1f}%")
@@ -482,7 +485,7 @@ def main() -> None:
                     fig_heat.update_layout(coloraxis_showscale=False, height=max(400, 24 * len(heat)))
                     fundo_transparente(fig_heat)
                     st.plotly_chart(fig_heat, use_container_width=True)
-                    st.caption("Verde = paga acima da mediana nacional. Vermelho = abaixo. Só UF com 3+ vendas.")
+                    st.caption("Verde = paga acima da mediana nacional. Vermelho = abaixo. Todas as UF com pelo menos 1 venda — cuidado com UF de amostra pequena (ver tabela ao lado).")
 
         st.divider()
         st.subheader("Mapa por município")

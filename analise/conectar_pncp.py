@@ -33,12 +33,20 @@ RE_MEDIDA_CAPTURA = re.compile(r"(\d{3})\s*/\s*(\d{2})\s*[Rr]\s*(\d{2}(?:[.,]\d)
 
 
 def _extrair_medida(descricao: str) -> str | None:
+    """achado 08/jul/26: item de MA descrevia 3 produtos diferentes num "item" só
+    ("Pneu ônibus 295/80R22.5 - 6un. Pneu Hilux 265/70R16 - 4un. Pneu van 195/75R16 -
+    4un") — pegar só a 1ª medida encontrada atribui o valor errado à medida errada
+    (203 itens têm 2+ medidas distintas na descrição). Se achar mais de 1 medida
+    diferente, a descrição é ambígua — não confiável, retorna None em vez de chutar."""
     if not isinstance(descricao, str):
         return None
-    m = RE_MEDIDA_CAPTURA.search(descricao)
-    if not m:
+    matches = RE_MEDIDA_CAPTURA.findall(descricao)
+    if not matches:
         return None
-    return f"{m.group(1)}/{m.group(2)} R{m.group(3).replace(',', '.')}"
+    medidas = {f"{a}/{b} R{c.replace(',', '.')}" for a, b, c in matches}
+    if len(medidas) > 1:
+        return None
+    return medidas.pop()
 
 
 def carregar_concorrencia() -> pd.DataFrame:
@@ -204,6 +212,22 @@ def carregar_base_pncp() -> pd.DataFrame:
     df = itens.merge(detalhes, on="numero_controle_pncp", how="inner")
     df = df.merge(resultados_principal, on=["numero_controle_pncp", "numero_item"], how="left")
 
+    # achado 08/jul/26: 9 itens (2 processos inteiros de PE + 1 de PB) com
+    # valor_unitario_resultado 10-40x o valor_unitario_estimado — vencedor não oferta MAIS
+    # que a estimativa num processo competitivo, erro sistemático de escala na fonte
+    # (confirmado: 275/80R22.5 na PB tinha resultado R$17.900 vs preço real nacional de
+    # ~R$1.700-2.900). Só essa direção (resultado >> estimado) é tratada — resultado <<
+    # estimado pode ser desconto real (estimativa ruim do órgão), não mexe. Invalida só o
+    # resultado (vira "sem dado"), mantém o item — ele ainda é demanda real, só o preço
+    # reportado é que não é confiável.
+    resultado_suspeito = (
+        df["valor_unitario_estimado"].notna() & (df["valor_unitario_estimado"] > 1)
+        & df["valor_unitario_resultado"].notna()
+        & (df["valor_unitario_resultado"] > 5 * df["valor_unitario_estimado"])
+    )
+    df.loc[resultado_suspeito, ["nome_fornecedor", "valor_unitario_resultado", "valor_total_resultado", "cod_fornecedor"]] = pd.NA
+    df.loc[resultado_suspeito, "tem_resultado"] = False
+
     df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")
     df["data_abertura_proposta"] = pd.to_datetime(df["data_abertura_proposta"], errors="coerce", utc=True)
     df["ano_mes"] = df["data_abertura_proposta"].dt.strftime("%Y-%m")
@@ -237,6 +261,8 @@ def carregar_fornecedores_resultado() -> pd.DataFrame:
           AND r.valor_total_homologado IS NOT NULL AND r.valor_total_homologado > 0
           AND (i.valor_unitario_estimado IS NULL OR i.valor_unitario_estimado <= 50000)
           AND (d.valor_total_estimado IS NULL OR d.valor_total_estimado <= 300000000)
+          AND (i.valor_unitario_estimado IS NULL OR i.valor_unitario_estimado <= 1
+               OR r.valor_unitario_homologado <= 5 * i.valor_unitario_estimado)
         """,
         ENGINE,
     )
