@@ -283,7 +283,7 @@ def carregar_fornecedores_resultado() -> pd.DataFrame:
                r.nome_fornecedor,
                r.valor_unitario_homologado AS valor_unitario_resultado,
                r.valor_total_homologado AS valor_total_resultado,
-               i.categoria, i.descricao, d.uf_sigla AS uf, d.modalidade_nome, d.srp,
+               i.categoria, i.descricao, i.quantidade, d.uf_sigla AS uf, d.modalidade_nome, d.srp,
                d.data_abertura_proposta
         FROM resultados r
         JOIN itens i ON i.numero_controle_pncp = r.numero_controle_pncp AND i.numero_item = r.numero_item

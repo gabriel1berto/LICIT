@@ -189,17 +189,22 @@ def main() -> None:
 
     # calculado 1x, reusado nas abas "Onde Entrar" (preço de referência) e "Produto"
     # (medidas mais pedidas) — evita duplicar a mesma agregação em 2 lugares.
-    com_medida = df.dropna(subset=["medida_extraida"])
+    com_medida = df.dropna(subset=["medida_extraida"]).copy()
     cobertura_medida = len(com_medida) / len(df) * 100 if len(df) else 0
     if not com_medida.empty:
+        # achado 08/jul/26: "itens pedidos/vendidos" deve ser UNIDADE real de pneu
+        # (quantidade), não contagem de linha de catálogo — 1 linha pode pedir 500 pneus,
+        # outra 2. Contar linha mistura giro pequeno com giro grande no mesmo número.
+        com_medida["qtd_vendida"] = com_medida["quantidade"].where(com_medida["tem_resultado"], 0)
         top_medidas = (
             com_medida.groupby("medida_extraida", as_index=False)
-                      .agg(n_itens=("medida_extraida", "size"), n_vendidos=("tem_resultado", "sum"),
+                      .agg(n_itens=("quantidade", "sum"), n_vendidos=("qtd_vendida", "sum"),
                            valor_total=("valor_item", "sum"))
                       .sort_values("n_itens", ascending=False)
                       .head(15)
         )
-        top_medidas["n_vendidos"] = top_medidas["n_vendidos"].astype("int64")
+        top_medidas["n_itens"] = top_medidas["n_itens"].round().astype("int64")
+        top_medidas["n_vendidos"] = top_medidas["n_vendidos"].round().astype("int64")
         top_medidas["valor_total"] = top_medidas["valor_total"].round().astype("int64")
         top_medidas_nomes_8 = com_medida["medida_extraida"].value_counts().head(8).index
     else:
@@ -207,7 +212,7 @@ def main() -> None:
         top_medidas_nomes_8 = pd.Index([])
 
     aba_entrar, aba_produto, aba_sazon, aba_forn = st.tabs(
-        ["🎯 Onde Entrar", "📦 Produto", "📅 Sazonalidade", "🏭 Fornecedores e Preço"]
+        ["🎯 Análise de mercado", "📦 Produto", "📅 Sazonalidade", "🏭 Fornecedores e Preço"]
     )
 
     # ── Aba Onde Entrar ──────────────────────────────────────────────────
@@ -365,7 +370,7 @@ def main() -> None:
             por_forn_br = vencidos_geo.groupby("nome_fornecedor", as_index=False).agg(
                 valor_total_resultado=("valor_total_resultado", "sum"),
                 editais=("numero_controle_pncp", "nunique"),
-                itens=("numero_controle_pncp", "size"),
+                itens=("quantidade", "sum"),
             )
             total_br = por_forn_br["valor_total_resultado"].sum()
             top15_br = por_forn_br.sort_values("valor_total_resultado", ascending=False).head(15).copy()
@@ -380,7 +385,7 @@ def main() -> None:
             por_uf_forn = vencidos_geo.groupby(["uf", "nome_fornecedor"], as_index=False).agg(
                 valor_total_resultado=("valor_total_resultado", "sum"),
                 editais=("numero_controle_pncp", "nunique"),
-                itens=("numero_controle_pncp", "size"),
+                itens=("quantidade", "sum"),
             )
             total_uf = por_uf_forn.groupby("uf")["valor_total_resultado"].transform("sum")
             por_uf_forn["participacao_pct"] = (por_uf_forn["valor_total_resultado"] / total_uf * 100).round().astype("int64")
@@ -567,7 +572,7 @@ def main() -> None:
                         .groupby(["medida_extraida", "nome_fornecedor"], as_index=False)
                         .agg(valor_total_resultado=("valor_total_resultado", "sum"),
                              editais=("numero_controle_pncp", "nunique"),
-                             itens=("numero_controle_pncp", "size"))
+                             itens=("quantidade", "sum"))
                     )
                     total_med = por_med_forn.groupby("medida_extraida")["valor_total_resultado"].transform("sum")
                     por_med_forn["participacao_pct"] = (por_med_forn["valor_total_resultado"] / total_med * 100).round().astype("int64")
@@ -651,7 +656,7 @@ def main() -> None:
                         .groupby("nome_fornecedor", as_index=False)
                         .agg(valor_ganho=("valor_total_resultado", "sum"),
                              n_processos=("numero_controle_pncp", "nunique"),
-                             n_itens=("numero_controle_pncp", "size"))
+                             n_itens=("quantidade", "sum"))
                         .sort_values("valor_ganho", ascending=False)
                         .head(15)
             )
