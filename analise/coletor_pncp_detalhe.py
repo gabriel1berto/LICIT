@@ -277,6 +277,10 @@ def processar_processo(con: psycopg2.extensions.connection, cur: psycopg2.extens
 # ── Loop principal ────────────────────────────────────────────────────────
 
 TIMEOUT_PROCESSANDO_MIN = 15  # reivindicação travada há mais que isso = worker morto/cortado, libera de novo
+COOLDOWN_ERRO_MIN = 20  # achado 08/jul/26: processo com endpoint persistentemente fora do ar (timeout
+# 6x seguidas) era reivindicado de novo 31s depois de falhar — sem cooldown, se for o menor
+# numero_controle_pncp elegível, os workers ficam martelando o mesmo registro morto em vez de
+# seguir pros outros pendentes. Mesmo padrão do timeout de 'processando' travado.
 
 
 def reivindicar_proximo(con: psycopg2.extensions.connection, cur: psycopg2.extensions.cursor) -> str | None:
@@ -294,7 +298,7 @@ def reivindicar_proximo(con: psycopg2.extensions.connection, cur: psycopg2.exten
         WHERE numero_controle_pncp = (
             SELECT numero_controle_pncp FROM progresso_detalhe
             WHERE status='pendente'
-               OR (status='erro' AND tentativas < %s)
+               OR (status='erro' AND tentativas < %s AND atualizado_em < %s)
                OR (status='processando' AND atualizado_em < %s)
             ORDER BY numero_controle_pncp
             FOR UPDATE SKIP LOCKED
@@ -304,6 +308,7 @@ def reivindicar_proximo(con: psycopg2.extensions.connection, cur: psycopg2.exten
     """, (
         datetime.now(timezone.utc).isoformat(),
         MAX_TENTATIVAS_PROCESSO,
+        (datetime.now(timezone.utc) - timedelta(minutes=COOLDOWN_ERRO_MIN)).isoformat(),
         (datetime.now(timezone.utc) - timedelta(minutes=TIMEOUT_PROCESSANDO_MIN)).isoformat(),
     ))
     row = cur.fetchone()
