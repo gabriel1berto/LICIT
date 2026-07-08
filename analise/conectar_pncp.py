@@ -284,7 +284,7 @@ def carregar_fornecedores_resultado() -> pd.DataFrame:
                r.valor_unitario_homologado AS valor_unitario_resultado,
                r.valor_total_homologado AS valor_total_resultado,
                i.categoria, i.descricao, i.quantidade, d.uf_sigla AS uf, d.modalidade_nome, d.srp,
-               d.data_abertura_proposta
+               d.data_abertura_proposta, d.valor_total_estimado
         FROM resultados r
         JOIN itens i ON i.numero_controle_pncp = r.numero_controle_pncp AND i.numero_item = r.numero_item
         JOIN detalhes d ON d.numero_controle_pncp = r.numero_controle_pncp
@@ -298,6 +298,23 @@ def carregar_fornecedores_resultado() -> pd.DataFrame:
         ENGINE,
     )
     resultados = resultados[~resultados["numero_controle_pncp"].isin(PROCESSOS_EXCLUIDOS_DADO_RUIM)]
+
+    # achado 08/jul/26 auditando lógica de cálculo do dashboard: essa função não tinha a
+    # dedup de processo retificado (mesmo processo republicado gera numero_controle_pncp
+    # novo, ~8% dos processos, ver comentário em carregar_base_pncp) — inflava contagem de
+    # editais ganhos/fornecedor dominante (310/18.674 linhas de resultado, ~1,7%). Mesma
+    # lógica de dedup (cnpj+data+valor, mantém o numero_controle_pncp mais antigo) mas
+    # calculada no nível PROCESSO (1 linha por numero_controle_pncp) antes de aplicar aqui —
+    # rodar duplicated() direto na tabela fornecedor/item (múltiplas linhas por processo)
+    # marcaria erroneamente o 2º item do MESMO processo como duplicata.
+    _processos = resultados[["numero_controle_pncp", "data_abertura_proposta", "valor_total_estimado"]].drop_duplicates(subset="numero_controle_pncp").sort_values("numero_controle_pncp")
+    _cnpj = _processos["numero_controle_pncp"].str.split("-").str[0]
+    _chave_dedup = pd.DataFrame({
+        "cnpj": _cnpj, "data": _processos["data_abertura_proposta"], "valor": _processos["valor_total_estimado"],
+    }, index=_processos.index)
+    _duplicado = _chave_dedup.duplicated(keep="first") & _chave_dedup["data"].notna() & _chave_dedup["valor"].notna()
+    _processos_excluir = set(_processos.loc[_duplicado, "numero_controle_pncp"])
+    resultados = resultados[~resultados["numero_controle_pncp"].isin(_processos_excluir)]
     resultados["medida_extraida"] = resultados["descricao"].apply(_extrair_medida)
     resultados["tipo"] = resultados["modalidade_nome"].apply(_classificar_tipo)
     resultados["regime"] = resultados["srp"].apply(lambda v: "RP" if v else "CD")
