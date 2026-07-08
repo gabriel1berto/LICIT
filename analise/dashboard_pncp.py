@@ -176,10 +176,34 @@ def main() -> None:
     col2.metric("Valor total", f"R$ {processo['valor_processo'].sum():,.0f}")
     col3.metric("Ticket médio", f"R$ {processo['valor_processo'].mean():,.0f}")
 
-    aba_geo, aba_sazon, aba_forn = st.tabs(["📍 Geografia", "📅 Sazonalidade", "🏭 Fornecedores e Preço"])
+    # calculado 1x, reusado nas abas "Onde Entrar" (preço de referência) e "Produto"
+    # (medidas mais pedidas) — evita duplicar a mesma agregação em 2 lugares.
+    com_medida = df.dropna(subset=["medida_extraida"])
+    cobertura_medida = len(com_medida) / len(df) * 100 if len(df) else 0
+    if not com_medida.empty:
+        top_medidas = (
+            com_medida.groupby("medida_extraida", as_index=False)
+                      .agg(n_itens=("medida_extraida", "size"), valor_total=("valor_item", "sum"))
+                      .sort_values("n_itens", ascending=False)
+                      .head(15)
+        )
+        top_medidas["valor_total"] = top_medidas["valor_total"].round().astype("int64")
+        top_medidas_nomes_8 = com_medida["medida_extraida"].value_counts().head(8).index
+    else:
+        top_medidas = pd.DataFrame(columns=["medida_extraida", "n_itens", "valor_total"])
+        top_medidas_nomes_8 = pd.Index([])
 
-    # ── Aba Geografia ────────────────────────────────────────────────────
-    with aba_geo:
+    aba_entrar, aba_produto, aba_sazon, aba_forn = st.tabs(
+        ["🎯 Onde Entrar", "📦 Produto", "📅 Sazonalidade", "🏭 Fornecedores e Preço"]
+    )
+
+    # ── Aba Onde Entrar ──────────────────────────────────────────────────
+    # Ordem = funil de decisão: 1) tamanho do mercado, 2) dinâmica de preço por
+    # tipo, 3) onde paga bem pelo mesmo produto (prêmio regional), 4) quem já
+    # domina, 5) detalhe fino por município. Não é ordem cronológica de quando
+    # cada gráfico foi construído — é a ordem em que a pergunta "onde eu entro"
+    # precisa ser respondida.
+    with aba_entrar:
         agg = (
             df.groupby(["uf", "regime_tipo"], as_index=False)
               .agg(valor_total=("valor_item", "sum"), n_processos=("cod_compra", "nunique"))
@@ -201,6 +225,8 @@ def main() -> None:
         # com as 27 UFs possíveis, as do meio (ex: MG) ficavam cortadas fora da área visível
         # da figura, não só escondidas por scroll. Altura proporcional ao nº de categorias
         # no eixo Y garante que todas as UFs selecionadas apareçam sempre.
+        # Sem rótulo de valor aqui de propósito — 27 UF x até 6 segmentos empilhados vira
+        # ilegível; a tabela logo abaixo já dá o número exato de cada célula.
         fig.update_layout(barmode="stack", legend_title_text="", height=max(450, 28 * len(ordem_uf)))
         fundo_transparente(fig)
         st.plotly_chart(fig, use_container_width=True)
@@ -245,69 +271,70 @@ def main() -> None:
         )
 
         st.divider()
-        st.subheader("Desconto por regime (RP x CD)")
-        preco_regime = df.dropna(subset=["valor_unitario_estimado", "valor_unitario_resultado"])
-        # valor_unitario_estimado <= R$1 é placeholder simbólico do órgão (sem preço de
-        # referência real publicado) — dividir por isso explode a % de desconto. Excluído.
-        preco_regime = preco_regime[preco_regime["valor_unitario_estimado"] > 1]
-        if preco_regime.empty:
-            st.info("Sem item com valor estimado + resultado nesse filtro.")
-        else:
-            preco_regime = preco_regime.copy()
-            preco_regime["desconto_pct"] = (1 - preco_regime["valor_unitario_resultado"] / preco_regime["valor_unitario_estimado"]) * 100
-            desconto_regime = preco_regime.groupby("regime")["desconto_pct"].median()
-            col_rp, col_cd = st.columns(2)
-            for col, regime in zip((col_rp, col_cd), ("RP", "CD")):
-                valor = f"{desconto_regime[regime]:.1f}%" if regime in desconto_regime.index else "sem dado"
-                col.metric(f"Desconto mediano — {regime}", valor)
+        col_desc, col_ticket = st.columns([1, 2])
+
+        with col_desc:
+            st.subheader("Desconto por regime")
+            preco_regime = df.dropna(subset=["valor_unitario_estimado", "valor_unitario_resultado"])
+            # valor_unitario_estimado <= R$1 é placeholder simbólico do órgão (sem preço de
+            # referência real publicado) — dividir por isso explode a % de desconto. Excluído.
+            preco_regime = preco_regime[preco_regime["valor_unitario_estimado"] > 1]
+            if preco_regime.empty:
+                st.info("Sem item com valor estimado + resultado nesse filtro.")
+            else:
+                preco_regime = preco_regime.copy()
+                preco_regime["desconto_pct"] = (1 - preco_regime["valor_unitario_resultado"] / preco_regime["valor_unitario_estimado"]) * 100
+                desconto_regime = preco_regime.groupby("regime")["desconto_pct"].median()
+                for regime in ("RP", "CD"):
+                    valor = f"{desconto_regime[regime]:.1f}%" if regime in desconto_regime.index else "sem dado"
+                    st.metric(f"Desconto mediano — {regime}", valor)
+                st.caption(
+                    f"Amostra: {len(preco_regime)} itens (mediana — média é sensível a outlier de preço mal "
+                    "publicado). Referência: fórmula de leilão assume 20% de margem."
+                )
+
+        with col_ticket:
+            st.subheader("Ticket mediano por UF — Dispensa x Pregão")
             st.caption(
-                f"Amostra: {len(preco_regime)} itens com estimado + homologado nesse filtro "
-                f"(mediana usada — média é sensível a outlier de preço mal publicado). "
-                "Referência: fórmula de leilão assume 20% de margem."
+                "Mediana, não média — dispensa por valor tem teto ~R$50-60k (Lei 14.133/21), mas outras "
+                "hipóteses do Art. 75 não têm teto. Poucos processos grandes distorcem a média em UF com "
+                "amostra pequena; mediana não sofre isso."
             )
-
-        st.divider()
-        st.subheader("Ticket mediano por UF — Dispensa x Pregão")
-        st.caption(
-            "Mediana, não média — dispensa por valor tem teto ~R$50-60k (Lei 14.133/21), mas outras "
-            "hipóteses do Art. 75 (emergência, exclusividade etc.) não têm teto. Poucos processos grandes "
-            "distorcem a média em UF com amostra pequena; mediana não sofre isso."
-        )
-        tm = (
-            df.groupby(["uf", "tipo", "cod_compra"], as_index=False)["valor_item"].sum()
-              .groupby(["uf", "tipo"], as_index=False)["valor_item"].median()
-              .rename(columns={"valor_item": "ticket_mediano"})
-        )
-        tm_pivot = tm[tm["tipo"].isin(["Dispensa", "Pregão"])].pivot(index="uf", columns="tipo", values="ticket_mediano")
-        for col in ["Dispensa", "Pregão"]:
-            if col not in tm_pivot.columns:
-                tm_pivot[col] = None
-        tm_pivot = tm_pivot.round(0)
-
-        preco_uf = df.dropna(subset=["valor_unitario_estimado", "valor_unitario_resultado"])
-        preco_uf = preco_uf[preco_uf["valor_unitario_estimado"] > 1].copy()  # exclui R$0,01 simbólico
-        if not preco_uf.empty:
-            preco_uf["desconto_pct"] = (1 - preco_uf["valor_unitario_resultado"] / preco_uf["valor_unitario_estimado"]) * 100
-            desconto_tipo = (
-                preco_uf[preco_uf["tipo"].isin(["Dispensa", "Pregão"])]
-                .groupby(["uf", "tipo"])["desconto_pct"].median()
-                .unstack("tipo")
+            tm = (
+                df.groupby(["uf", "tipo", "cod_compra"], as_index=False)["valor_item"].sum()
+                  .groupby(["uf", "tipo"], as_index=False)["valor_item"].median()
+                  .rename(columns={"valor_item": "ticket_mediano"})
             )
+            tm_pivot = tm[tm["tipo"].isin(["Dispensa", "Pregão"])].pivot(index="uf", columns="tipo", values="ticket_mediano")
             for col in ["Dispensa", "Pregão"]:
-                if col not in desconto_tipo.columns:
-                    desconto_tipo[col] = None
-            tm_pivot["Desconto med. Dispensa (%)"] = desconto_tipo["Dispensa"].round(1)
-            tm_pivot["Desconto med. Pregão (%)"] = desconto_tipo["Pregão"].round(1)
-        else:
-            tm_pivot["Desconto med. Dispensa (%)"] = None
-            tm_pivot["Desconto med. Pregão (%)"] = None
+                if col not in tm_pivot.columns:
+                    tm_pivot[col] = None
+            tm_pivot = tm_pivot.round(0)
 
-        tm_pivot = tm_pivot.sort_values("Pregão", ascending=False, na_position="last")
-        tm_pivot_fmt = tm_pivot.reset_index().rename(columns={"uf": "UF", "Dispensa": "Ticket Dispensa (R$)", "Pregão": "Ticket Pregão (R$)"})
-        for c in ["Ticket Dispensa (R$)", "Ticket Pregão (R$)"]:
-            tm_pivot_fmt[c] = tm_pivot_fmt[c].apply(fmt_abrev)
-        st.dataframe(tm_pivot_fmt, use_container_width=True, hide_index=True)
-        st.caption("Desconto mediano: itens com estimado + homologado, exclui preço de referência simbólico (R$0,01).")
+            preco_uf = df.dropna(subset=["valor_unitario_estimado", "valor_unitario_resultado"])
+            preco_uf = preco_uf[preco_uf["valor_unitario_estimado"] > 1].copy()  # exclui R$0,01 simbólico
+            if not preco_uf.empty:
+                preco_uf["desconto_pct"] = (1 - preco_uf["valor_unitario_resultado"] / preco_uf["valor_unitario_estimado"]) * 100
+                desconto_tipo = (
+                    preco_uf[preco_uf["tipo"].isin(["Dispensa", "Pregão"])]
+                    .groupby(["uf", "tipo"])["desconto_pct"].median()
+                    .unstack("tipo")
+                )
+                for col in ["Dispensa", "Pregão"]:
+                    if col not in desconto_tipo.columns:
+                        desconto_tipo[col] = None
+                tm_pivot["Desconto med. Dispensa (%)"] = desconto_tipo["Dispensa"].round(1)
+                tm_pivot["Desconto med. Pregão (%)"] = desconto_tipo["Pregão"].round(1)
+            else:
+                tm_pivot["Desconto med. Dispensa (%)"] = None
+                tm_pivot["Desconto med. Pregão (%)"] = None
+
+            tm_pivot = tm_pivot.sort_values("Pregão", ascending=False, na_position="last")
+            tm_pivot_fmt = tm_pivot.reset_index().rename(columns={"uf": "UF", "Dispensa": "Ticket Dispensa (R$)", "Pregão": "Ticket Pregão (R$)"})
+            for c in ["Ticket Dispensa (R$)", "Ticket Pregão (R$)"]:
+                tm_pivot_fmt[c] = tm_pivot_fmt[c].apply(fmt_abrev)
+            st.dataframe(tm_pivot_fmt, use_container_width=True, hide_index=True, height=350)
+            st.caption("Desconto mediano: exclui preço de referência simbólico (R$0,01).")
 
         st.divider()
         st.subheader("Fornecedor dominante")
@@ -353,87 +380,6 @@ def main() -> None:
             )
 
         st.divider()
-        st.subheader("Medidas de pneu mais pedidas")
-        com_medida = df.dropna(subset=["medida_extraida"])
-        cobertura_medida = len(com_medida) / len(df) * 100 if len(df) else 0
-        if com_medida.empty:
-            st.info("Sem medida extraída nesse filtro.")
-        else:
-            top_medidas = (
-                com_medida.groupby("medida_extraida", as_index=False)
-                          .agg(n_itens=("medida_extraida", "size"), valor_total=("valor_item", "sum"))
-                          .sort_values("n_itens", ascending=False)
-                          .head(15)
-            )
-            top_medidas["valor_total"] = top_medidas["valor_total"].round().astype("int64")
-            figm = px.bar(
-                top_medidas.sort_values("n_itens"), x="n_itens", y="medida_extraida", orientation="h",
-                labels={"n_itens": "Nº de itens pedidos", "medida_extraida": "Medida"},
-                title="Top 15 medidas mais pedidas (por nº de itens)",
-            )
-            figm.update_traces(marker_color="#2a78d6")
-            fundo_transparente(figm)
-            st.plotly_chart(figm, use_container_width=True)
-            top_medidas_fmt = top_medidas.rename(columns={"medida_extraida": "Medida", "n_itens": "Nº itens", "valor_total": "Valor total (R$)"})
-            top_medidas_fmt["Valor total (R$)"] = top_medidas_fmt["Valor total (R$)"].apply(fmt_abrev)
-            st.dataframe(top_medidas_fmt, use_container_width=True, hide_index=True)
-            st.caption(
-                f"Medida extraída da descrição em {cobertura_medida:.0f}% dos itens ({len(com_medida)}/{len(df)}) — "
-                "resto é descrição genérica sem medida no texto, ou câmara/agrícola (formato de medida diferente, não capturado)."
-            )
-
-            st.divider()
-            st.subheader("Fornecedor dominante por medida")
-            venc_medida = df_forn.dropna(subset=["nome_fornecedor", "medida_extraida"])
-            top_medidas_nomes_geral = top_medidas["medida_extraida"].tolist()
-            if venc_medida.empty:
-                st.info("Sem item com resultado + medida nesse filtro.")
-            else:
-                por_med_forn = (
-                    venc_medida[venc_medida["medida_extraida"].isin(top_medidas_nomes_geral)]
-                    .groupby(["medida_extraida", "nome_fornecedor"], as_index=False)["valor_total_resultado"].sum()
-                )
-                total_med = por_med_forn.groupby("medida_extraida")["valor_total_resultado"].transform("sum")
-                por_med_forn["participacao_pct"] = (por_med_forn["valor_total_resultado"] / total_med * 100).round().astype("int64")
-                dom_medida = (
-                    por_med_forn.sort_values("valor_total_resultado", ascending=False)
-                                .groupby("medida_extraida").first().reset_index()
-                )
-                dom_medida["valor_total_resultado"] = dom_medida["valor_total_resultado"].apply(fmt_abrev)
-                dom_medida = dom_medida.rename(columns={
-                    "medida_extraida": "Medida", "nome_fornecedor": "Fornecedor dominante",
-                    "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% da medida",
-                }).sort_values("% da medida", ascending=False)
-                st.dataframe(dom_medida, use_container_width=True, hide_index=True)
-                st.caption(
-                    "Quem mais vende cada medida (top 15 medidas), nos filtros atuais. Útil pra identificar "
-                    "medida com fornecedor pouco concentrado (mais espaço pra entrar) x medida já dominada."
-                )
-
-            st.divider()
-            st.subheader("Tendência mensal — top 5 medidas")
-            top5_medidas = top_medidas.sort_values("n_itens", ascending=False).head(5)["medida_extraida"].tolist()
-            tend_medida = (
-                com_medida[com_medida["medida_extraida"].isin(top5_medidas)]
-                .dropna(subset=["ano_mes"])
-                .groupby(["ano_mes", "medida_extraida"], as_index=False)
-                .size().rename(columns={"size": "n_itens"})
-                .sort_values("ano_mes")
-            )
-            if tend_medida.empty:
-                st.info("Sem dado de data suficiente pra tendência mensal nesse filtro.")
-            else:
-                figt = px.line(
-                    tend_medida, x="ano_mes", y="n_itens", color="medida_extraida", markers=True,
-                    labels={"ano_mes": "Mês", "n_itens": "Nº de itens pedidos", "medida_extraida": "Medida"},
-                    title="Evolução mensal de demanda — top 5 medidas mais pedidas",
-                )
-                figt.update_layout(legend_title_text="")
-                fundo_transparente(figt, tickformat_x=False)
-                st.plotly_chart(figt, use_container_width=True)
-                st.caption("Mês = data de abertura de proposta. Ajuda a ver medida em alta x em queda pra priorizar estoque.")
-
-        st.divider()
         st.subheader("Preço de referência — medida x UF")
         st.caption(
             "Prêmio regional = preço mediano pago no estado ÷ preço mediano nacional da MESMA medida, "
@@ -445,8 +391,7 @@ def main() -> None:
         if preco_medida_uf.empty:
             st.info("Sem item com medida + preço final nesse filtro.")
         else:
-            top_medidas_nomes = com_medida["medida_extraida"].value_counts().head(8).index
-            preco_medida_uf = preco_medida_uf[preco_medida_uf["medida_extraida"].isin(top_medidas_nomes)].copy()
+            preco_medida_uf = preco_medida_uf[preco_medida_uf["medida_extraida"].isin(top_medidas_nomes_8)].copy()
             mediana_nacional = preco_medida_uf.groupby("medida_extraida")["valor_unitario_resultado"].median()
             tab_mu = (
                 preco_medida_uf.groupby(["medida_extraida", "uf"], as_index=False)
@@ -456,59 +401,59 @@ def main() -> None:
             tab_mu["premio_pct"] = (tab_mu["preco_mediano"] / tab_mu["preco_mediano_nacional"] - 1) * 100
             tab_mu["confianca"] = pd.cut(tab_mu["n"], bins=[0, 4, 14, float("inf")], labels=["baixa", "média", "alta"])
             tab_mu = tab_mu[tab_mu["n"] >= 3].sort_values(["medida_extraida", "premio_pct"], ascending=[True, False])
-            if tab_mu.empty:
-                st.info("Nenhuma combinação medida x UF com 3+ amostras ainda — normal com 20% de cobertura, cresce com a coleta.")
-            else:
-                tab_mu["preco_mediano"] = tab_mu["preco_mediano"].round(2)
-                tab_mu["preco_mediano_nacional"] = tab_mu["preco_mediano_nacional"].round(2)
-                tab_mu["premio_pct"] = tab_mu["premio_pct"].round(1)
-                st.dataframe(
-                    tab_mu.rename(columns={
-                        "medida_extraida": "Medida", "uf": "UF", "preco_mediano": "Preço mediano UF (R$/un)",
-                        "preco_mediano_nacional": "Preço mediano BR (R$/un)", "premio_pct": "Prêmio regional (%)",
-                        "n": "Nº vendas", "confianca": "Confiança",
-                    }),
-                    use_container_width=True, hide_index=True,
-                )
-            st.caption("Só medida x UF com 3+ vendas (evita ruído de amostra única). Top 8 medidas mais pedidas nacionalmente.")
 
-            st.divider()
-            st.subheader("Mapa de calor — prêmio regional por medida")
-            medida_escolhida = st.selectbox("Medida:", ["Todas as medidas"] + top_medidas_nomes.tolist())
-            if medida_escolhida == "Todas as medidas":
-                heat = (
-                    tab_mu.groupby("uf", as_index=False)
-                          .agg(premio_pct=("premio_pct", "mean"), n=("medida_extraida", "size"))
-                          .sort_values("premio_pct", ascending=True)
-                )
-                titulo_heat = "Prêmio regional médio — todas as medidas (vs mediana nacional de cada uma)"
-                legenda_n = "Nº de medidas com amostra"
-            else:
-                heat = tab_mu[tab_mu["medida_extraida"] == medida_escolhida].sort_values("premio_pct", ascending=True)
-                titulo_heat = f"Prêmio regional — {medida_escolhida} (vs mediana nacional)"
-                legenda_n = "Nº vendas"
-            if heat.empty:
-                st.info("Sem amostra suficiente (3+ vendas) pra essa medida nos filtros atuais.")
-            else:
-                fig_heat = px.bar(
-                    heat, x="premio_pct", y="uf", orientation="h", color="premio_pct",
-                    color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
-                    labels={"premio_pct": "Prêmio regional (%)", "uf": "UF", "n": legenda_n},
-                    title=titulo_heat,
-                    hover_data={"n": True},
-                )
-                fig_heat.update_layout(coloraxis_showscale=False, height=max(400, 24 * len(heat)))
-                fundo_transparente(fig_heat)
-                st.plotly_chart(fig_heat, use_container_width=True)
-                if medida_escolhida == "Todas as medidas":
-                    st.caption(
-                        "Média do prêmio regional entre as top 8 medidas (cada uma comparada à própria mediana "
-                        "nacional, não a um preço médio único) — mostra que estado paga mais caro no geral. "
-                        "Verde = acima da média nacional. Vermelho = abaixo."
-                    )
+            col_ref, col_heat = st.columns([1, 1])
+            with col_ref:
+                if tab_mu.empty:
+                    st.info("Nenhuma combinação medida x UF com 3+ amostras ainda — normal com 20% de cobertura, cresce com a coleta.")
                 else:
-                    st.caption("Verde = paga acima da mediana nacional dessa medida. Vermelho = abaixo. Só UF com 3+ vendas.")
+                    tab_mu_fmt = tab_mu.copy()
+                    tab_mu_fmt["preco_mediano"] = tab_mu_fmt["preco_mediano"].round(2)
+                    tab_mu_fmt["preco_mediano_nacional"] = tab_mu_fmt["preco_mediano_nacional"].round(2)
+                    tab_mu_fmt["premio_pct"] = tab_mu_fmt["premio_pct"].round(1)
+                    st.dataframe(
+                        tab_mu_fmt.rename(columns={
+                            "medida_extraida": "Medida", "uf": "UF", "preco_mediano": "Preço mediano UF (R$/un)",
+                            "preco_mediano_nacional": "Preço mediano BR (R$/un)", "premio_pct": "Prêmio regional (%)",
+                            "n": "Nº vendas", "confianca": "Confiança",
+                        }),
+                        use_container_width=True, hide_index=True, height=450,
+                    )
+                st.caption("Só medida x UF com 3+ vendas. Top 8 medidas mais pedidas nacionalmente.")
 
+            with col_heat:
+                medida_escolhida = st.selectbox("Medida do mapa de calor:", ["Todas as medidas"] + top_medidas_nomes_8.tolist())
+                if medida_escolhida == "Todas as medidas":
+                    heat = (
+                        tab_mu.groupby("uf", as_index=False)
+                              .agg(premio_pct=("premio_pct", "mean"), n=("medida_extraida", "size"))
+                              .sort_values("premio_pct", ascending=True)
+                    )
+                    titulo_heat = "Prêmio regional médio — todas as medidas"
+                    legenda_n = "Nº de medidas com amostra"
+                else:
+                    heat = tab_mu[tab_mu["medida_extraida"] == medida_escolhida].sort_values("premio_pct", ascending=True)
+                    titulo_heat = f"Prêmio regional — {medida_escolhida}"
+                    legenda_n = "Nº vendas"
+                if heat.empty:
+                    st.info("Sem amostra suficiente (3+ vendas) pra essa medida nos filtros atuais.")
+                else:
+                    heat = heat.copy()
+                    heat["premio_label"] = heat["premio_pct"].apply(lambda v: f"{v:+.1f}%")
+                    fig_heat = px.bar(
+                        heat, x="premio_pct", y="uf", orientation="h", color="premio_pct", text="premio_label",
+                        color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
+                        labels={"premio_pct": "Prêmio regional (%)", "uf": "UF", "n": legenda_n},
+                        title=titulo_heat,
+                        hover_data={"n": True},
+                    )
+                    fig_heat.update_traces(textposition="outside")
+                    fig_heat.update_layout(coloraxis_showscale=False, height=max(400, 24 * len(heat)))
+                    fundo_transparente(fig_heat)
+                    st.plotly_chart(fig_heat, use_container_width=True)
+                    st.caption("Verde = paga acima da mediana nacional. Vermelho = abaixo. Só UF com 3+ vendas.")
+
+        st.divider()
         st.subheader("Mapa por município")
         lat_lon = carregar_lat_lon()
         muni = (
@@ -544,6 +489,85 @@ def main() -> None:
                 muni_tab.columns = ["Município", "UF", "Processos", "Valor (R$)"]
                 muni_tab["Valor (R$)"] = muni_tab["Valor (R$)"].apply(fmt_abrev)
                 st.dataframe(muni_tab, use_container_width=True, hide_index=True, height=600)
+
+    # ── Aba Produto ──────────────────────────────────────────────────────
+    with aba_produto:
+        if com_medida.empty:
+            st.info("Sem medida extraída nesse filtro.")
+        else:
+            col_medida_graf, col_medida_tab = st.columns([1, 1])
+            with col_medida_graf:
+                top_medidas_label = top_medidas.sort_values("n_itens").copy()
+                top_medidas_label["n_label"] = top_medidas_label["n_itens"].apply(lambda v: f"{v:,}".replace(",", "."))
+                figm = px.bar(
+                    top_medidas_label, x="n_itens", y="medida_extraida", orientation="h", text="n_label",
+                    labels={"n_itens": "Nº de itens pedidos", "medida_extraida": "Medida"},
+                    title="Top 15 medidas mais pedidas (por nº de itens)",
+                )
+                figm.update_traces(marker_color="#2a78d6", textposition="outside")
+                fundo_transparente(figm)
+                st.plotly_chart(figm, use_container_width=True)
+                st.caption(
+                    f"Medida extraída da descrição em {cobertura_medida:.0f}% dos itens ({len(com_medida)}/{len(df)}) — "
+                    "resto é descrição genérica sem medida, ou câmara/agrícola (formato diferente, não capturado)."
+                )
+            with col_medida_tab:
+                top_medidas_fmt = top_medidas.rename(columns={"medida_extraida": "Medida", "n_itens": "Nº itens", "valor_total": "Valor total (R$)"})
+                top_medidas_fmt["Valor total (R$)"] = top_medidas_fmt["Valor total (R$)"].apply(fmt_abrev)
+                st.dataframe(top_medidas_fmt, use_container_width=True, hide_index=True, height=480)
+
+            st.divider()
+            col_dom_medida, col_tend = st.columns([1, 1])
+            with col_dom_medida:
+                st.subheader("Fornecedor dominante por medida")
+                venc_medida = df_forn.dropna(subset=["nome_fornecedor", "medida_extraida"])
+                top_medidas_nomes_geral = top_medidas["medida_extraida"].tolist()
+                if venc_medida.empty:
+                    st.info("Sem item com resultado + medida nesse filtro.")
+                else:
+                    por_med_forn = (
+                        venc_medida[venc_medida["medida_extraida"].isin(top_medidas_nomes_geral)]
+                        .groupby(["medida_extraida", "nome_fornecedor"], as_index=False)["valor_total_resultado"].sum()
+                    )
+                    total_med = por_med_forn.groupby("medida_extraida")["valor_total_resultado"].transform("sum")
+                    por_med_forn["participacao_pct"] = (por_med_forn["valor_total_resultado"] / total_med * 100).round().astype("int64")
+                    dom_medida = (
+                        por_med_forn.sort_values("valor_total_resultado", ascending=False)
+                                    .groupby("medida_extraida").first().reset_index()
+                    )
+                    dom_medida["valor_total_resultado"] = dom_medida["valor_total_resultado"].apply(fmt_abrev)
+                    dom_medida = dom_medida.rename(columns={
+                        "medida_extraida": "Medida", "nome_fornecedor": "Fornecedor dominante",
+                        "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% da medida",
+                    }).sort_values("% da medida", ascending=False)
+                    st.dataframe(dom_medida, use_container_width=True, hide_index=True, height=450)
+                    st.caption(
+                        "Quem mais vende cada medida. Útil pra identificar medida com fornecedor pouco "
+                        "concentrado (mais espaço pra entrar) x medida já dominada."
+                    )
+
+            with col_tend:
+                st.subheader("Tendência mensal — top 5 medidas")
+                top5_medidas = top_medidas.sort_values("n_itens", ascending=False).head(5)["medida_extraida"].tolist()
+                tend_medida = (
+                    com_medida[com_medida["medida_extraida"].isin(top5_medidas)]
+                    .dropna(subset=["ano_mes"])
+                    .groupby(["ano_mes", "medida_extraida"], as_index=False)
+                    .size().rename(columns={"size": "n_itens"})
+                    .sort_values("ano_mes")
+                )
+                if tend_medida.empty:
+                    st.info("Sem dado de data suficiente pra tendência mensal nesse filtro.")
+                else:
+                    figt = px.line(
+                        tend_medida, x="ano_mes", y="n_itens", color="medida_extraida", markers=True,
+                        labels={"ano_mes": "Mês", "n_itens": "Nº de itens pedidos", "medida_extraida": "Medida"},
+                        title="Evolução mensal de demanda — top 5 medidas",
+                    )
+                    figt.update_layout(legend_title_text="", height=450)
+                    fundo_transparente(figt, tickformat_x=False)
+                    st.plotly_chart(figt, use_container_width=True)
+                    st.caption("Mês = data de abertura de proposta. Ajuda a ver medida em alta x em queda pra priorizar estoque.")
 
     # ── Aba Sazonalidade ─────────────────────────────────────────────────
     with aba_sazon:
@@ -592,66 +616,77 @@ def main() -> None:
             conc["participacao_pct"] = (conc["valor_ganho"] / total_ganho * 100).round().astype("int64")
             conc["valor_ganho"] = conc["valor_ganho"].round().astype("int64")
 
-            figf = px.bar(
-                conc.sort_values("valor_ganho"), x="valor_ganho", y="nome_fornecedor", orientation="h",
-                labels={"valor_ganho": "Valor ganho (R$)", "nome_fornecedor": ""},
-                title="Top 15 fornecedores por valor ganho (itens com resultado)",
-            )
-            figf.update_traces(marker_color="#2a78d6")
-            figf.update_layout(showlegend=False)
-            fundo_transparente(figf)
-            st.plotly_chart(figf, use_container_width=True)
+            conc_label = conc.sort_values("valor_ganho").copy()
+            conc_label["valor_label"] = conc_label["valor_ganho"].apply(fmt_abrev)
+            col_conc_graf, col_conc_tab = st.columns([1, 1])
+            with col_conc_graf:
+                figf = px.bar(
+                    conc_label, x="valor_ganho", y="nome_fornecedor", orientation="h", text="valor_label",
+                    labels={"valor_ganho": "Valor ganho (R$)", "nome_fornecedor": ""},
+                    title="Top 15 fornecedores por valor ganho",
+                )
+                figf.update_traces(marker_color="#2a78d6", textposition="outside")
+                figf.update_layout(showlegend=False)
+                fundo_transparente(figf)
+                st.plotly_chart(figf, use_container_width=True)
+                top5_pct = conc.head(5)["participacao_pct"].sum()
+                st.caption(f"Top 5 fornecedores concentram {top5_pct:.0f}% do valor ganho nos filtros atuais.")
 
-            top5_pct = conc.head(5)["participacao_pct"].sum()
-            st.caption(f"Top 5 fornecedores concentram {top5_pct:.0f}% do valor ganho nos filtros atuais.")
-
-            st.subheader("Recorrência — nº de processos vencidos por fornecedor")
-            tabela_forn = conc[["nome_fornecedor", "n_processos", "valor_ganho", "participacao_pct"]].rename(
-                columns={"nome_fornecedor": "Fornecedor", "n_processos": "Processos vencidos",
-                         "valor_ganho": "Valor ganho (R$)", "participacao_pct": "% do total"}
-            )
-            tabela_forn["Valor ganho (R$)"] = tabela_forn["Valor ganho (R$)"].apply(fmt_abrev)
-            tabela_forn["% do total"] = tabela_forn["% do total"].apply(lambda v: f"{v:.0f}%")
-            st.dataframe(tabela_forn, use_container_width=True, hide_index=True)
+            with col_conc_tab:
+                st.subheader("Recorrência — processos vencidos")
+                tabela_forn = conc[["nome_fornecedor", "n_processos", "valor_ganho", "participacao_pct"]].rename(
+                    columns={"nome_fornecedor": "Fornecedor", "n_processos": "Processos vencidos",
+                             "valor_ganho": "Valor ganho (R$)", "participacao_pct": "% do total"}
+                )
+                tabela_forn["Valor ganho (R$)"] = tabela_forn["Valor ganho (R$)"].apply(fmt_abrev)
+                tabela_forn["% do total"] = tabela_forn["% do total"].apply(lambda v: f"{v:.0f}%")
+                st.dataframe(tabela_forn, use_container_width=True, hide_index=True, height=480)
 
         st.divider()
-        st.subheader("Desconto mediano por categoria")
-        preco = df.dropna(subset=["valor_unitario_estimado", "valor_unitario_resultado"])
-        # > R$1: exclui preço de referência simbólico (R$0,01) que o órgão publica quando
-        # não tem estimativa real — dividir por isso gera % de desconto absurda (-8M%).
-        preco = preco[preco["valor_unitario_estimado"] > 1]
-        if preco.empty:
-            st.info("Sem item com valor estimado + resultado nesse filtro.")
-        else:
-            preco = preco.copy()
-            preco["desconto_pct"] = (1 - preco["valor_unitario_resultado"] / preco["valor_unitario_estimado"]) * 100
-            desconto_cat = preco.groupby("categoria", as_index=False)["desconto_pct"].median().sort_values("desconto_pct", ascending=False)
-            desconto_cat["desconto_pct"] = desconto_cat["desconto_pct"].round().astype("int64")
+        col_desc_cat, col_ticket_cat = st.columns([1, 1])
 
-            fig4 = px.bar(
-                desconto_cat, x="categoria", y="desconto_pct",
+        with col_desc_cat:
+            st.subheader("Desconto mediano por categoria")
+            preco = df.dropna(subset=["valor_unitario_estimado", "valor_unitario_resultado"])
+            # > R$1: exclui preço de referência simbólico (R$0,01) que o órgão publica quando
+            # não tem estimativa real — dividir por isso gera % de desconto absurda (-8M%).
+            preco = preco[preco["valor_unitario_estimado"] > 1]
+            if preco.empty:
+                st.info("Sem item com valor estimado + resultado nesse filtro.")
+            else:
+                preco = preco.copy()
+                preco["desconto_pct"] = (1 - preco["valor_unitario_resultado"] / preco["valor_unitario_estimado"]) * 100
+                desconto_cat = preco.groupby("categoria", as_index=False)["desconto_pct"].median().sort_values("desconto_pct", ascending=False)
+                desconto_cat["desconto_pct"] = desconto_cat["desconto_pct"].round().astype("int64")
+                desconto_cat["desconto_label"] = desconto_cat["desconto_pct"].apply(lambda v: f"{v:.0f}%")
+
+                fig4 = px.bar(
+                    desconto_cat, x="categoria", y="desconto_pct", text="desconto_label",
+                    color="categoria", color_discrete_map=CORES_CATEGORIA,
+                    labels={"categoria": "Categoria", "desconto_pct": "Desconto mediano (%)"},
+                    title="Desconto mediano (estimado → homologado)",
+                )
+                fig4.update_traces(textposition="outside")
+                fig4.update_layout(showlegend=False)
+                fundo_transparente(fig4, tickformat_x=False)
+                st.plotly_chart(fig4, use_container_width=True)
+
+        with col_ticket_cat:
+            st.subheader("Valor médio por item, por categoria")
+            ticket_cat = df.groupby("categoria", as_index=False)["valor_item"].mean().rename(columns={"valor_item": "valor_medio"})
+            ticket_cat["valor_medio"] = ticket_cat["valor_medio"].round().astype("int64")
+            ticket_cat = ticket_cat.sort_values("valor_medio", ascending=False)
+            ticket_cat["valor_label"] = ticket_cat["valor_medio"].apply(fmt_abrev)
+            fig5 = px.bar(
+                ticket_cat, x="categoria", y="valor_medio", text="valor_label",
                 color="categoria", color_discrete_map=CORES_CATEGORIA,
-                labels={"categoria": "Categoria", "desconto_pct": "Desconto mediano (%)"},
-                title="Desconto mediano (estimado → homologado) por categoria de produto",
+                labels={"categoria": "Categoria", "valor_medio": "Valor médio por item (R$)"},
+                title="Valor médio por item",
             )
-            fig4.update_layout(showlegend=False)
-            fundo_transparente(fig4, tickformat_x=False)
-            st.plotly_chart(fig4, use_container_width=True)
-
-        st.divider()
-        st.subheader("Valor médio por item, por categoria")
-        ticket_cat = df.groupby("categoria", as_index=False)["valor_item"].mean().rename(columns={"valor_item": "valor_medio"})
-        ticket_cat["valor_medio"] = ticket_cat["valor_medio"].round().astype("int64")
-        ticket_cat = ticket_cat.sort_values("valor_medio", ascending=False)
-        fig5 = px.bar(
-            ticket_cat, x="categoria", y="valor_medio",
-            color="categoria", color_discrete_map=CORES_CATEGORIA,
-            labels={"categoria": "Categoria", "valor_medio": "Valor médio por item (R$)"},
-            title="Valor médio por item, por categoria de produto",
-        )
-        fig5.update_layout(showlegend=False)
-        fundo_transparente(fig5, tickformat_x=False)
-        st.plotly_chart(fig5, use_container_width=True)
+            fig5.update_traces(textposition="outside")
+            fig5.update_layout(showlegend=False)
+            fundo_transparente(fig5, tickformat_x=False)
+            st.plotly_chart(fig5, use_container_width=True)
 
 
 if __name__ == "__main__":
