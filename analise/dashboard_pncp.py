@@ -474,22 +474,40 @@ def main() -> None:
 
             st.divider()
             st.subheader("Mapa de calor — prêmio regional por medida")
-            medida_escolhida = st.selectbox("Medida:", top_medidas_nomes.tolist())
-            heat = tab_mu[tab_mu["medida_extraida"] == medida_escolhida].sort_values("premio_pct", ascending=True)
+            medida_escolhida = st.selectbox("Medida:", ["Todas as medidas"] + top_medidas_nomes.tolist())
+            if medida_escolhida == "Todas as medidas":
+                heat = (
+                    tab_mu.groupby("uf", as_index=False)
+                          .agg(premio_pct=("premio_pct", "mean"), n=("medida_extraida", "size"))
+                          .sort_values("premio_pct", ascending=True)
+                )
+                titulo_heat = "Prêmio regional médio — todas as medidas (vs mediana nacional de cada uma)"
+                legenda_n = "Nº de medidas com amostra"
+            else:
+                heat = tab_mu[tab_mu["medida_extraida"] == medida_escolhida].sort_values("premio_pct", ascending=True)
+                titulo_heat = f"Prêmio regional — {medida_escolhida} (vs mediana nacional)"
+                legenda_n = "Nº vendas"
             if heat.empty:
                 st.info("Sem amostra suficiente (3+ vendas) pra essa medida nos filtros atuais.")
             else:
                 fig_heat = px.bar(
                     heat, x="premio_pct", y="uf", orientation="h", color="premio_pct",
                     color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
-                    labels={"premio_pct": "Prêmio regional (%)", "uf": "UF"},
-                    title=f"Prêmio regional — {medida_escolhida} (vs mediana nacional)",
+                    labels={"premio_pct": "Prêmio regional (%)", "uf": "UF", "n": legenda_n},
+                    title=titulo_heat,
                     hover_data={"n": True},
                 )
                 fig_heat.update_layout(coloraxis_showscale=False, height=max(400, 24 * len(heat)))
                 fundo_transparente(fig_heat)
                 st.plotly_chart(fig_heat, use_container_width=True)
-                st.caption("Verde = paga acima da mediana nacional dessa medida. Vermelho = paga abaixo. Só UF com 3+ vendas.")
+                if medida_escolhida == "Todas as medidas":
+                    st.caption(
+                        "Média do prêmio regional entre as top 8 medidas (cada uma comparada à própria mediana "
+                        "nacional, não a um preço médio único) — mostra que estado paga mais caro no geral. "
+                        "Verde = acima da média nacional. Vermelho = abaixo."
+                    )
+                else:
+                    st.caption("Verde = paga acima da mediana nacional dessa medida. Vermelho = abaixo. Só UF com 3+ vendas.")
 
         st.subheader("Mapa por município")
         lat_lon = carregar_lat_lon()
