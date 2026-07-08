@@ -31,7 +31,7 @@ import re
 # o PRODUTO logo no início, só ignora ruído burocrático na frente dele).
 RE_PREFIXO_IGNORAR = (
     r"(?:\[.{0,40}?\]\s*[-–]?\s*)?"                                    # "[COTA ...] - "
-    r"(?:\d{1,10}\s*[-–]\s*)?"                                          # "0006648 - "
+    r"(?:(?:lote\s+)?\d{1,10}\s*[-–]\s*)?"                              # "0006648 - " / "Lote 1 - "
     r"(?:(?:aquisi[çc][ãa]o|fornecimento|contrata[çc][ãa]o|compra)\s+"
     r"(?:parcelada\s+)?(?:de\s+)?)?"                                    # "aquisição de "
 )
@@ -42,6 +42,13 @@ RE_PREFIXO_IGNORAR = (
 # em si, nunca "cadeira pneumática" (que começaria com "cadeira", não com "pneumático").
 RE_PNEU_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}(?:pneus?|pneum[áa]ticos?)\b", re.IGNORECASE)
 RE_CAMARA_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]mara\s+(de\s+)?ar\b", re.IGNORECASE)
+# "CÂMARA DE FABRICAÇÃO NACIONAL... REFERÊNCIA AR 750/16" — câmara de pneu de verdade, mas
+# "de ar" não vem logo depois de "câmara" (RE_CAMARA_INICIO não bate). Fallback: aceita
+# "câmara" sozinho no início SE tiver medida ampla em algum lugar da descrição — protege
+# contra ruído tipo "Câmara Municipal"/bola esportiva "com câmara butil" (não tem medida de
+# pneu, isso nunca bate RE_MEDIDA_AMPLA).
+RE_CAMARA_GENERICA = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]mara\b", re.IGNORECASE)
+RE_MEDIDA_AMPLA = re.compile(r"\d{2,5}[.,]?\d?\s*[-/xX]\s*\d{2,3}([.,]\d)?\b")
 # aceita barra opcional antes do R ("215/75/R17.5") e sufixo de letra colado no aro
 # ("R14C" — C de comercial/reforçado, sem espaço antes) — os 2 vistos em catálogo real.
 RE_MEDIDA_R = re.compile(r"\d{3}\s*/\s*\d{2}\s*/?\s*[Rr]\s*\d{2}(?:[.,]\d)?[A-Za-z]?\b")
@@ -50,8 +57,9 @@ RE_MEDIDA_R = re.compile(r"\d{3}\s*/\s*\d{2}\s*/?\s*[Rr]\s*\d{2}(?:[.,]\d)?[A-Za
 # R$100k-800k/unidade (o veículo), não o pneu. Mesma lógica de âncora no início já usada
 # pra pneu/câmara: se o produto começa com nome de veículo, medida solta não conta.
 RE_VEICULO_INICIO = re.compile(
-    r"^\s*(ve[íi]culo|caminh[ãa]o|ambul[âa]ncia|[ôo]nibus|micro[ -]?[ôo]nibus|van\b|"
-    r"pick[ -]?up|caminhonete|loca[çc][ãa]o\s+(di[áa]ria\s+)?de\s+ve[íi]culo)",
+    rf"^\s*{RE_PREFIXO_IGNORAR}(ve[íi]culo|caminh[ãa]o|ambul[âa]ncia|[ôo]nibus|micro[ -]?[ôo]nibus|van\b|"
+    r"pick[ -]?up|caminhonete|trator\b|motocicleta|motoneta|"
+    r"loca[çc][ãa]o\s+(di[áa]ria\s+)?de\s+ve[íi]culo)",
     re.IGNORECASE,
 )
 # achado 07/jul/26: "Pneu para retroescavadeira, construção radial..." é o PRODUTO pneu
@@ -67,13 +75,20 @@ RE_EXCLUSAO_MAQUINA = re.compile(
     re.IGNORECASE,
 )
 RE_EXCLUSAO_SERVICO = re.compile(
-    r"recapagem|vulcaniza[çc][ãa]o|alinhamento|balanceamento|conserto|"
-    r"presta[çc][aã]o\s+de\s+servi[çc]|servi[çc]os?\s+de\s+(borracharia|recauchutagem|vulcaniza|substitui)|"
+    r"recapagem|vulcaniza[çc][ãa]o|alinhamento|balanceamento|conserto|concerto\s+(de|em)|"  # "concerto" = erro ortográfico comum de "conserto" em edital
+    r"presta[çc][aã]o\s+de\s+servi[çc]|servi[çc]os?\s+de\s+(borracharia|recauchutagem|vulcaniza|substitui|troca)|"
     r"loca[çc][aã]o\s+de\s+(trator|m[áa]quina|equipamento)|"
     r"loca[çc][aã]o\s+(di[áa]ria\s+)?de.{0,40}(ve[íi]culo|van|minibus|micro[ -]?[ôo]nibus|[ôo]nibus|caminh[ãa]o|ambul[âa]ncia)|"
     r"manuten[çc][ãa]o\s+(preventiva|corretiva)?\s*(do|de)\s+ve[íi]culo|"
     r"servi[çc]o\s+de\s+(montagem|desmontagem|rod[íi]zio)|montagem\s+e\s+desmontagem|"
     r"rod[íi]zio\s+de\s+pneus?|remendo\s+de\s+pneus?|"
+    # achado 07/jul/26 (auditoria jun-jul/2026): esses termos aparecem SOLTOS no catálogo,
+    # sem "serviços de" na frente ("RECAUCHUTAGEM DE PNEU 19.5X24", "SUBSTITUIÇÃO PNEU
+    # 2.50-17") — hoje só ficam False por acaso (medida sem R não bate bate_produto), mas
+    # se RE_MEDIDA_R/RE_MEDIDA_AMPLA for expandido no futuro pra cobrir esses formatos,
+    # precisam estar aqui pra continuar corretamente excluídos como serviço, não venda nova.
+    r"recauchutagem\s+(de\s+)?pneus?|recupera[çc][ãa]o\s+de\s+pneus?|substitui[çc][ãa]o\s+(de\s+)?pneus?|"
+    r"troca\s+de\s+(pneus?|bicos?)|"
     r"n[úu]cleo.*v[áa]lvula|v[áa]lvula.*n[úu]cleo",
     re.IGNORECASE,
 )
@@ -89,7 +104,8 @@ def eh_pneu_de_verdade(descricao: str) -> bool:
         return False
     if RE_VEICULO_INICIO.search(descricao):
         return False
-    produto_explicito = bool(RE_PNEU_INICIO.search(descricao) or RE_CAMARA_INICIO.search(descricao))
+    camara_generica = bool(RE_CAMARA_GENERICA.search(descricao)) and bool(RE_MEDIDA_AMPLA.search(descricao))
+    produto_explicito = bool(RE_PNEU_INICIO.search(descricao) or RE_CAMARA_INICIO.search(descricao) or camara_generica)
     bate_produto = produto_explicito or bool(RE_MEDIDA_R.search(descricao))
     if not bate_produto:
         return False
