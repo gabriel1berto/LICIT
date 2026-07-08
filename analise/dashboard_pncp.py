@@ -16,7 +16,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from conectar_pncp import carregar_base_pncp, cobertura_por_uf, cobertura_pct
+from conectar_pncp import carregar_base_pncp, carregar_fornecedores_resultado, cobertura_por_uf, cobertura_pct
 
 SQL_DIR = Path(__file__).parent
 
@@ -81,6 +81,11 @@ def carregar_base() -> pd.DataFrame:
     df = carregar_base_pncp()
     df["regime_tipo"] = df["regime"] + " - " + df["tipo"]
     return df
+
+
+@st.cache_data(ttl=300)
+def carregar_fornecedores() -> pd.DataFrame:
+    return carregar_fornecedores_resultado()
 
 
 @st.cache_data(ttl=300)
@@ -152,6 +157,18 @@ def main() -> None:
     if df.empty:
         st.warning("Nenhum dado para os filtros selecionados.")
         return
+
+    # base separada, granularidade fornecedor (aceita fan-out de propósito — cota principal
+    # + reservada no mesmo item são 2 fornecedores reais — nunca usar pra somar valor_item).
+    base_forn = carregar_fornecedores()
+    df_forn = base_forn[
+        base_forn["uf"].isin(ufs_sel)
+        & base_forn["categoria"].isin(categorias_sel)
+        & base_forn["tipo"].isin(tipos_sel)
+        & base_forn["regime"].isin(regimes_sel)
+    ]
+    if mes_ini and mes_fim:
+        df_forn = df_forn[(df_forn["ano_mes"] >= mes_ini) & (df_forn["ano_mes"] <= mes_fim)]
 
     processo = df.groupby("cod_compra")["valor_item"].sum().reset_index(name="valor_processo")
     col1, col2, col3 = st.columns(3)
@@ -294,7 +311,7 @@ def main() -> None:
 
         st.divider()
         st.subheader("Fornecedor dominante")
-        vencidos_geo = df[df["tem_resultado"] == True].dropna(subset=["nome_fornecedor"])  # noqa: E712
+        vencidos_geo = df_forn.dropna(subset=["nome_fornecedor"])
         if vencidos_geo.empty:
             st.info("Sem item com resultado nesse filtro.")
         else:
@@ -367,7 +384,7 @@ def main() -> None:
 
             st.divider()
             st.subheader("Fornecedor dominante por medida")
-            venc_medida = com_medida[com_medida["tem_resultado"] == True].dropna(subset=["nome_fornecedor"])  # noqa: E712
+            venc_medida = df_forn.dropna(subset=["nome_fornecedor", "medida_extraida"])
             top_medidas_nomes_geral = top_medidas["medida_extraida"].tolist()
             if venc_medida.empty:
                 st.info("Sem item com resultado + medida nesse filtro.")
@@ -513,7 +530,7 @@ def main() -> None:
 
     # ── Aba Fornecedores e Preço ─────────────────────────────────────────
     with aba_forn:
-        vencidos = df[df["tem_resultado"] == True]  # noqa: E712
+        vencidos = df_forn
 
         st.subheader("Concentração de fornecedores")
         if vencidos.empty or vencidos["nome_fornecedor"].dropna().empty:
@@ -522,7 +539,7 @@ def main() -> None:
             conc = (
                 vencidos.dropna(subset=["nome_fornecedor"])
                         .groupby("nome_fornecedor", as_index=False)
-                        .agg(valor_ganho=("valor_total_resultado", "sum"), n_processos=("cod_compra", "nunique"))
+                        .agg(valor_ganho=("valor_total_resultado", "sum"), n_processos=("numero_controle_pncp", "nunique"))
                         .sort_values("valor_ganho", ascending=False)
                         .head(15)
             )

@@ -161,22 +161,40 @@ def carregar_base_pncp() -> pd.DataFrame:
     mantidos = ~chave_dedup.duplicated(keep="first") | chave_dedup["data"].isna() | chave_dedup["valor"].isna()
     detalhes = detalhes[mantidos]
 
-    # 1 resultado por item: menor ordem_classificacao_srp (1º colocado / vencedor)
+    # achado 08/jul/26 auditando métricas de fornecedor/desconto: ordem_classificacao_srp=1
+    # NÃO é único por item — 291 itens têm múltiplos fornecedores empatados em ordem=1.
+    # Confirmado que é o comportamento normal de Registro de Preço (múltiplos fornecedores
+    # registrados no mesmo item, ex: cota principal + cota reservada ME/EPP, cada um com
+    # ordem=1 dentro da própria cota) — não é 1 vencedor por item, é potencialmente vários,
+    # cada um genuíno. O erro estava em tentar reduzir isso a "1 por item" via MIN(ordem);
+    # o filtro certo é excluir fornecedor "fantasma" (registrado mas sem contratação
+    # efetiva, valor_total_homologado=0) — 210 de 291 itens tinham exatamente esse padrão
+    # (1 fornecedor real + resto zerado). Preserva os casos de cota múltipla legítima (69
+    # itens com 2+ fornecedores reais no mesmo item) em vez de escolher 1 arbitrariamente.
     resultados = pd.read_sql_query(
         """
-        SELECT r.numero_controle_pncp, r.numero_item, r.ni_fornecedor AS cod_fornecedor,
-               r.nome_fornecedor, r.valor_unitario_homologado AS valor_unitario_resultado,
-               r.valor_total_homologado AS valor_total_resultado
-        FROM resultados r
-        JOIN (
-            SELECT numero_controle_pncp, numero_item, MIN(ordem_classificacao_srp) AS min_ordem
-            FROM resultados
-            GROUP BY numero_controle_pncp, numero_item
-        ) m ON m.numero_controle_pncp = r.numero_controle_pncp
-           AND m.numero_item = r.numero_item
-           AND (r.ordem_classificacao_srp = m.min_ordem OR m.min_ordem IS NULL)
+        SELECT numero_controle_pncp, numero_item, ni_fornecedor AS cod_fornecedor,
+               nome_fornecedor, valor_unitario_homologado AS valor_unitario_resultado,
+               valor_total_homologado AS valor_total_resultado
+        FROM resultados
+        WHERE valor_total_homologado IS NOT NULL AND valor_total_homologado > 0
         """,
         ENGINE,
+    )
+
+    # achado 08/jul/26: quando o item tem 2+ fornecedores reais (cota principal + reservada),
+    # o merge left item->resultados duplicava a linha do ITEM inteiro (valor_item incluso) —
+    # inflava Valor Total/Ticket médio/Geografia/Sazonalidade em ~0,3% (185 linhas duplicadas
+    # medido em 08/jul/26, cresce com a coleta). valor_item é atributo do ITEM, não do
+    # fornecedor — não pode duplicar por causa de quantos fornecedores venceram aquele item.
+    # Mantém só o fornecedor de MAIOR valor_total_resultado como representante do item aqui
+    # (pra desconto/fornecedor cruzado com valor_item); granularidade fina de TODOS os
+    # fornecedores reais fica em carregar_fornecedores_resultado(), usada separadamente nos
+    # gráficos de fornecedor dominante/concentração (que não usam valor_item, então fan-out
+    # ali é correto e não deve ser perdido).
+    resultados_principal = (
+        resultados.sort_values("valor_total_resultado", ascending=False)
+                  .drop_duplicates(subset=["numero_controle_pncp", "numero_item"], keep="first")
     )
 
     itens = itens[~itens["numero_controle_pncp"].isin(PROCESSOS_EXCLUIDOS_DADO_RUIM)]
@@ -184,7 +202,7 @@ def carregar_base_pncp() -> pd.DataFrame:
     # inner, não left — "detalhes" já teve a dedup de processo republicado acima; left
     # traria de volta os itens do numero_controle_pncp duplicado que a dedup removeu.
     df = itens.merge(detalhes, on="numero_controle_pncp", how="inner")
-    df = df.merge(resultados, on=["numero_controle_pncp", "numero_item"], how="left")
+    df = df.merge(resultados_principal, on=["numero_controle_pncp", "numero_item"], how="left")
 
     df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")
     df["data_abertura_proposta"] = pd.to_datetime(df["data_abertura_proposta"], errors="coerce", utc=True)
@@ -196,6 +214,53 @@ def carregar_base_pncp() -> pd.DataFrame:
     df["medida_extraida"] = df["descricao"].apply(_extrair_medida)
 
     return df
+
+
+def carregar_fornecedores_resultado() -> pd.DataFrame:
+    """1 linha por (item, fornecedor real vencedor) — granularidade fina, aceita fan-out
+    de propósito (cota principal + reservada no mesmo item são 2 fornecedores diferentes,
+    ambos legítimos). Não tem valor_item (evita a tentação de somar valor_item aqui, que
+    duplicaria — ver comentário em carregar_base_pncp). Usar só pra métricas de fornecedor
+    (dominante, concentração) — nunca pra Valor Total/Ticket médio/Geografia."""
+    resultados = pd.read_sql_query(
+        """
+        SELECT r.numero_controle_pncp, r.numero_item, r.ni_fornecedor AS cnpj_fornecedor,
+               r.nome_fornecedor,
+               r.valor_unitario_homologado AS valor_unitario_resultado,
+               r.valor_total_homologado AS valor_total_resultado,
+               i.categoria, i.descricao, d.uf_sigla AS uf, d.modalidade_nome, d.srp,
+               d.data_abertura_proposta
+        FROM resultados r
+        JOIN itens i ON i.numero_controle_pncp = r.numero_controle_pncp AND i.numero_item = r.numero_item
+        JOIN detalhes d ON d.numero_controle_pncp = r.numero_controle_pncp
+        WHERE i.eh_pneu = TRUE
+          AND r.valor_total_homologado IS NOT NULL AND r.valor_total_homologado > 0
+          AND (i.valor_unitario_estimado IS NULL OR i.valor_unitario_estimado <= 50000)
+          AND (d.valor_total_estimado IS NULL OR d.valor_total_estimado <= 300000000)
+        """,
+        ENGINE,
+    )
+    resultados = resultados[~resultados["numero_controle_pncp"].isin(PROCESSOS_EXCLUIDOS_DADO_RUIM)]
+    resultados["medida_extraida"] = resultados["descricao"].apply(_extrair_medida)
+    resultados["tipo"] = resultados["modalidade_nome"].apply(_classificar_tipo)
+    resultados["regime"] = resultados["srp"].apply(lambda v: "RP" if v else "CD")
+    resultados["data_abertura_proposta"] = pd.to_datetime(resultados["data_abertura_proposta"], errors="coerce", utc=True)
+    resultados["ano_mes"] = resultados["data_abertura_proposta"].dt.strftime("%Y-%m")
+
+    # achado 08/jul/26: mesmo CNPJ aparece com até 6 grafias diferentes de nome no PNCP
+    # (ex: "RAVI E-COMMERCE LTDA.", "RAVI E-COMMERCE LTDA - EPP", "RAVI E-COMMERCE"...) —
+    # órgão digita o nome à mão a cada homologação, sem normalização. Agrupar por
+    # nome_fornecedor (texto livre) fragmenta o mesmo fornecedor em várias linhas,
+    # subestimando a concentração real de mercado. Agrupa por CNPJ (cnpj_fornecedor,
+    # confiável) e usa a grafia mais frequente daquele CNPJ como rótulo de exibição.
+    nome_mais_comum = (
+        resultados.groupby(["cnpj_fornecedor", "nome_fornecedor"]).size()
+                  .reset_index(name="n").sort_values("n", ascending=False)
+                  .drop_duplicates(subset="cnpj_fornecedor", keep="first")
+                  .set_index("cnpj_fornecedor")["nome_fornecedor"]
+    )
+    resultados["nome_fornecedor"] = resultados["cnpj_fornecedor"].map(nome_mais_comum).fillna(resultados["nome_fornecedor"])
+    return resultados
 
 
 if __name__ == "__main__":
