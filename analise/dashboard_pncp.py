@@ -307,8 +307,6 @@ def main() -> None:
             top15_br = top15_br.rename(columns={
                 "nome_fornecedor": "Fornecedor", "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% do total BR",
             })[["Ranking", "Fornecedor", "Valor ganho (R$)", "% do total BR"]]
-            st.caption("Top 15 — Brasil:")
-            st.dataframe(top15_br, use_container_width=True, hide_index=True)
 
             por_uf_forn = vencidos_geo.groupby(["uf", "nome_fornecedor"], as_index=False)["valor_total_resultado"].sum()
             total_uf = por_uf_forn.groupby("uf")["valor_total_resultado"].transform("sum")
@@ -323,8 +321,14 @@ def main() -> None:
                 "uf": "UF", "nome_fornecedor": "Fornecedor",
                 "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% do valor da UF",
             })[["UF", "Ranking", "Fornecedor", "Valor ganho (R$)", "% do valor da UF"]]
-            st.caption("Top 15 por UF (use os filtros de UF na barra lateral pra focar num estado):")
-            st.dataframe(top15_uf, use_container_width=True, hide_index=True, height=400)
+
+            col_forn_br, col_forn_uf = st.columns(2)
+            with col_forn_br:
+                st.caption("Top 15 — Brasil:")
+                st.dataframe(top15_br, use_container_width=True, hide_index=True, height=400)
+            with col_forn_uf:
+                st.caption("Top 15 por UF (use os filtros de UF na barra lateral pra focar num estado):")
+                st.dataframe(top15_uf, use_container_width=True, hide_index=True, height=400)
             st.caption(
                 "Fornecedor com maior valor ganho (itens com resultado), Brasil e por UF, nos filtros atuais. "
                 "Amostra parcial — só processos já com detalhe coletado. Marca/modelo do produto não é "
