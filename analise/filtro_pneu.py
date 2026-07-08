@@ -48,6 +48,11 @@ RE_CAMARA_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]mara\s+(de\s+)?ar
 # contra ruído tipo "Câmara Municipal"/bola esportiva "com câmara butil" (não tem medida de
 # pneu, isso nunca bate RE_MEDIDA_AMPLA).
 RE_CAMARA_GENERICA = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]mara\b", re.IGNORECASE)
+# achado 08/jul/26: "CÂMARA REFRIGERADA - Refrigerador modelo científico..." (freezer de
+# laboratório) bateu RE_CAMARA_GENERICA + alguma dimensão do equipamento bateu
+# RE_MEDIDA_AMPLA por coincidência — "câmara" tem outros sentidos fora de pneu (câmara
+# frigorífica, câmara municipal, câmara de vídeo). Exclui explicitamente antes de aceitar.
+RE_CAMARA_NAO_PNEU = re.compile(r"c[âa]mara\s+(refrigerad|fria\b|frigor[íi]fic|municipal|de\s+v[íi]deo|escura)", re.IGNORECASE)
 RE_MEDIDA_AMPLA = re.compile(r"\d{2,5}[.,]?\d?\s*[-/xX]\s*\d{2,3}([.,]\d)?\b")
 # aceita barra opcional antes do R ("215/75/R17.5") e sufixo de letra colado no aro
 # ("R14C" — C de comercial/reforçado, sem espaço antes) — os 2 vistos em catálogo real.
@@ -56,12 +61,37 @@ RE_MEDIDA_R = re.compile(r"\d{3}\s*/\s*\d{2}\s*/?\s*[Rr]\s*\d{2}(?:[.,]\d)?[A-Za
 # medida do pneu de fábrica batia em RE_MEDIDA_R e virava "eh_pneu=1" — item de
 # R$100k-800k/unidade (o veículo), não o pneu. Mesma lógica de âncora no início já usada
 # pra pneu/câmara: se o produto começa com nome de veículo, medida solta não conta.
+# achado 08/jul/26: "FURGAO/VAN 10+1 PASSAGEIROS..." e "UNIDADE MOVEL DE BANCO DE
+# LEITE - VEÍCULO AUTOMOTOR..." (unidade odontológica móvel, unidade de vacinação) são
+# veículo inteiro (R$100k-800k) que escapavam por não ter "furgão"/"unidade móvel" na lista.
 RE_VEICULO_INICIO = re.compile(
     rf"^\s*{RE_PREFIXO_IGNORAR}(ve[íi]culo|caminh[ãa]o|ambul[âa]ncia|[ôo]nibus|micro[ -]?[ôo]nibus|van\b|"
+    r"furg[ãa]o|unidade\s+m[óo]vel|"
     r"pick[ -]?up|caminhonete|trator\b|motocicleta|motoneta|"
     r"loca[çc][ãa]o\s+(di[áa]ria\s+)?de\s+ve[íi]culo)",
     re.IGNORECASE,
 )
+# achado 08/jul/26 auditando os 127 itens "eh_pneu=True sem nenhuma palavra pneu/câmara no
+# texto" (maior risco — só bateram por RE_MEDIDA_R sozinho): 3 categorias de falso positivo
+# real, todas com a mesma assinatura — a MEDIDA citada é do pneu que vai NO produto, mas o
+# produto sendo vendido é outra coisa:
+# 1. Serviço no início: "MONTAGEM DE PNEU ARO...", "MONTAGEM/DESMONTAGEM...",
+#    "DESMONTAGEM/MONTAGEM...", "SERVIÇO MONTAGEM PNEU..." — a exclusão de serviço já
+#    existente (RE_EXCLUSAO_SERVICO) só cobria "serviço de montagem"/"montagem e
+#    desmontagem" (frases exatas) — todas as variações de ordem/separador acima escapavam.
+#    Ancorado no início (como RE_VEICULO_INICIO): se a frase COMEÇA com montagem/
+#    desmontagem, é o serviço sendo vendido, não o pneu — diferente de "PNEU X - INCLUSO
+#    MONTAGEM E INSTALAÇÃO" (começa com "PNEU", venda do pneu com serviço agregado, mantido).
+RE_SERVICO_INICIO = re.compile(
+    rf"^\s*{RE_PREFIXO_IGNORAR}(montagem|desmontagem|servi[çc]o|execu[çc][ãa]o)\b",
+    re.IGNORECASE,
+)
+# 2. Roda/aro de liga leve: "ARO 175/70 R13 FABRICADO EM LIGA LEVE", "RODA LIGA LEVE 205/60
+#    R16" — produto é a RODA (a medida citada é do pneu que ela recebe), não o pneu.
+RE_RODA_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}(aro|roda)\s", re.IGNORECASE)
+# 3. Bico/pito avulso: "BICO DE AR INSTALADO PARA RODA ARO...", "AQUISIÇÃO DE PITOS
+#    COMPATÍVEIS COM PNEUS..." — produto é a válvula, não o pneu.
+RE_ACESSORIO_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}(bicos?|pitos?)\b", re.IGNORECASE)
 # achado 07/jul/26: "Pneu para retroescavadeira, construção radial..." é o PRODUTO pneu
 # (RE_PNEU_INICIO já bate), retroescavadeira é só o contexto de aplicação — mas caía nessa
 # exclusão mesmo assim. Split em 2 grupos: RE_EXCLUSAO_MAQUINA só vale quando o produto foi
@@ -80,7 +110,11 @@ RE_EXCLUSAO_SERVICO = re.compile(
     r"loca[çc][aã]o\s+de\s+(trator|m[áa]quina|equipamento)|"
     r"loca[çc][aã]o\s+(di[áa]ria\s+)?de.{0,40}(ve[íi]culo|van|minibus|micro[ -]?[ôo]nibus|[ôo]nibus|caminh[ãa]o|ambul[âa]ncia)|"
     r"manuten[çc][ãa]o\s+(preventiva|corretiva)?\s*(do|de)\s+ve[íi]culo|"
-    r"servi[çc]o\s+de\s+(montagem|desmontagem|rod[íi]zio)|montagem\s+e\s+desmontagem|"
+    # achado 08/jul/26: "servi[çc]o de montagem/desmontagem" e "montagem e desmontagem"
+    # soltos (qualquer lugar do texto) excluíam venda genuína de pneu com serviço agregado
+    # ("FORNECIMENTO...DE PNEU NOVO...INCLUINDO MONTAGEM E DESMONTAGEM") — movido pra
+    # RE_SERVICO_INICIO (ancorado no início da descrição), que só pega quando montagem/
+    # desmontagem/serviço é o OBJETO do item, não uma cláusula de serviço agregado à venda.
     r"rod[íi]zio\s+de\s+pneus?|remendo\s+de\s+pneus?|"
     # achado 07/jul/26 (auditoria jun-jul/2026): esses termos aparecem SOLTOS no catálogo,
     # sem "serviços de" na frente ("RECAUCHUTAGEM DE PNEU 19.5X24", "SUBSTITUIÇÃO PNEU
@@ -104,7 +138,17 @@ def eh_pneu_de_verdade(descricao: str) -> bool:
         return False
     if RE_VEICULO_INICIO.search(descricao):
         return False
-    camara_generica = bool(RE_CAMARA_GENERICA.search(descricao)) and bool(RE_MEDIDA_AMPLA.search(descricao))
+    if RE_SERVICO_INICIO.search(descricao):
+        return False
+    if RE_ACESSORIO_INICIO.search(descricao):
+        return False
+    if RE_RODA_INICIO.search(descricao) and re.search(r"liga\s+leve", descricao, re.IGNORECASE):
+        return False
+    camara_generica = (
+        bool(RE_CAMARA_GENERICA.search(descricao))
+        and bool(RE_MEDIDA_AMPLA.search(descricao))
+        and not RE_CAMARA_NAO_PNEU.search(descricao)
+    )
     produto_explicito = bool(RE_PNEU_INICIO.search(descricao) or RE_CAMARA_INICIO.search(descricao) or camara_generica)
     bate_produto = produto_explicito or bool(RE_MEDIDA_R.search(descricao))
     if not bate_produto:
