@@ -206,7 +206,13 @@ def main() -> None:
         top_medidas["n_itens"] = top_medidas["n_itens"].round().astype("int64")
         top_medidas["n_vendidos"] = top_medidas["n_vendidos"].round().astype("int64")
         top_medidas["valor_total"] = top_medidas["valor_total"].round().astype("int64")
-        top_medidas_nomes_8 = com_medida["medida_extraida"].value_counts().head(8).index
+        # achado 08/jul/26 auditando lógica do dashboard: usava value_counts() (contagem de
+        # LINHA de catálogo) em vez de somar quantidade — divergia do ranking correto de
+        # top_medidas em 6 das 8 medidas (ex: omitia "20.5-25", 2ª medida mais vendida em
+        # volume real com 80mil unidades, e mostrava "12.5-80" no lugar por ter mais linhas
+        # pequenas). Preço de referência/mapa de calor são a ferramenta central de "onde
+        # entrar" — usar o mesmo ranking por quantidade da tabela Produto.
+        top_medidas_nomes_8 = pd.Index(top_medidas.sort_values("n_itens", ascending=False).head(8)["medida_extraida"])
     else:
         top_medidas = pd.DataFrame(columns=["medida_extraida", "n_itens", "valor_total"])
         top_medidas_nomes_8 = pd.Index([])
