@@ -99,13 +99,27 @@ RE_ACESSORIO_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}(bicos?|pitos?)\b", 
 # pneu de fábrica); se já veio de RE_PNEU_INICIO/RE_CAMARA_INICIO, o produto já é pneu com
 # certeza, nome de máquina no meio da frase é só aplicação, não desqualifica.
 # RE_EXCLUSAO_SERVICO sempre vale — pneu NOVO nunca é descrito com "recapagem"/"conserto".
+# achado 08/jul/26: "PNEU X com alinhamento e balanceamento incluso/instalado" (176 casos
+# achados auditando falso negativo em massa) — venda de pneu com serviço agregado, igual o
+# padrão já resolvido pra montagem/desmontagem. "alinhamento"/"balanceamento" só desqualifica
+# quando o produto NÃO é explícito (mesma semântica de RE_EXCLUSAO_MAQUINA) — se já sabemos
+# que é "PNEU X", esses termos depois são sempre serviço agregado, nunca o objeto do item.
 RE_EXCLUSAO_MAQUINA = re.compile(
     r"carregadeira|motoniveladora|retroescavadeira|escavadeira|rolo\s+compactador|"
-    r"cadeira\s+de\s+rodas",
+    r"cadeira\s+de\s+rodas|alinhamento|balanceamento",
+    re.IGNORECASE,
+)
+# achado 08/jul/26: "NÃO SE ACEITANDO PNEUS RECONDICIONADOS/REFORMADOS, QUER POR RECAPAGEM,
+# RECAUCHUTAGEM OU REMODELAGEM" é uma cláusula de PROIBIÇÃO exigindo pneu NOVO — mas
+# RE_EXCLUSAO_SERVICO batia "recapagem"/"recauchutagem" sem entender a negação, excluindo
+# pneu novo genuíno (23 casos achados). Removida da string antes de checar exclusão.
+RE_PROIBICAO_REFORMA = re.compile(
+    r"n[ãa]o\s+(se\s+)?(ser[ãa]o?\s+)?aceit[ao]?s?[^.;]{0,120}?"
+    r"(recondicionad|reformad|recapad|recauchutad|remodelad)[^.;]{0,80}",
     re.IGNORECASE,
 )
 RE_EXCLUSAO_SERVICO = re.compile(
-    r"recapagem|vulcaniza[çc][ãa]o|alinhamento|balanceamento|conserto|concerto\s+(de|em)|"  # "concerto" = erro ortográfico comum de "conserto" em edital
+    r"recapagem|vulcaniza[çc][ãa]o|conserto|concerto\s+(de|em)|"  # "concerto" = erro ortográfico comum de "conserto" em edital
     r"presta[çc][aã]o\s+de\s+servi[çc]|servi[çc]os?\s+de\s+(borracharia|recauchutagem|vulcaniza|substitui|troca)|"
     r"loca[çc][aã]o\s+de\s+(trator|m[áa]quina|equipamento)|"
     r"loca[çc][aã]o\s+(di[áa]ria\s+)?de.{0,40}(ve[íi]culo|van|minibus|micro[ -]?[ôo]nibus|[ôo]nibus|caminh[ãa]o|ambul[âa]ncia)|"
@@ -153,7 +167,8 @@ def eh_pneu_de_verdade(descricao: str) -> bool:
     bate_produto = produto_explicito or bool(RE_MEDIDA_R.search(descricao))
     if not bate_produto:
         return False
-    if RE_EXCLUSAO_SERVICO.search(descricao):
+    descricao_sem_proibicao = RE_PROIBICAO_REFORMA.sub("", descricao)
+    if RE_EXCLUSAO_SERVICO.search(descricao_sem_proibicao):
         return False
     if not produto_explicito and RE_EXCLUSAO_MAQUINA.search(descricao):
         return False
