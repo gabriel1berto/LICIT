@@ -91,7 +91,7 @@ RE_SERVICO_INICIO = re.compile(
 RE_RODA_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}(aro|roda)\s", re.IGNORECASE)
 # 3. Bico/pito avulso: "BICO DE AR INSTALADO PARA RODA ARO...", "AQUISIÇÃO DE PITOS
 #    COMPATÍVEIS COM PNEUS..." — produto é a válvula, não o pneu.
-RE_ACESSORIO_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}(bicos?|pitos?)\b", re.IGNORECASE)
+RE_ACESSORIO_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}(bicos?|pitos?|pistos?)\b", re.IGNORECASE)
 # achado 07/jul/26: "Pneu para retroescavadeira, construção radial..." é o PRODUTO pneu
 # (RE_PNEU_INICIO já bate), retroescavadeira é só o contexto de aplicação — mas caía nessa
 # exclusão mesmo assim. Split em 2 grupos: RE_EXCLUSAO_MAQUINA só vale quando o produto foi
