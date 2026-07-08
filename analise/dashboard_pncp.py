@@ -434,35 +434,62 @@ def main() -> None:
                 st.caption("Mês = data de abertura de proposta. Ajuda a ver medida em alta x em queda pra priorizar estoque.")
 
         st.divider()
-        st.subheader("Preço final vendido — medida x UF")
-        preco_medida_uf = df.dropna(subset=["medida_extraida", "valor_unitario_estimado", "valor_unitario_resultado"])
-        preco_medida_uf = preco_medida_uf[preco_medida_uf["valor_unitario_estimado"] > 1].copy()  # exclui R$0,01 simbólico
+        st.subheader("Preço de referência — medida x UF")
+        st.caption(
+            "Prêmio regional = preço mediano pago no estado ÷ preço mediano nacional da MESMA medida, "
+            "menos 1. Diferente de 'desconto vs estimado' (que mistura qualidade da estimativa do órgão "
+            "com concorrência real) — aqui compara produto físico idêntico entre estados, sinal direto de "
+            "onde o mercado paga mais/menos pela mesma medida."
+        )
+        preco_medida_uf = df.dropna(subset=["medida_extraida", "valor_unitario_resultado"])
         if preco_medida_uf.empty:
             st.info("Sem item com medida + preço final nesse filtro.")
         else:
-            preco_medida_uf["desconto_pct"] = (1 - preco_medida_uf["valor_unitario_resultado"] / preco_medida_uf["valor_unitario_estimado"]) * 100
             top_medidas_nomes = com_medida["medida_extraida"].value_counts().head(8).index
+            preco_medida_uf = preco_medida_uf[preco_medida_uf["medida_extraida"].isin(top_medidas_nomes)].copy()
+            mediana_nacional = preco_medida_uf.groupby("medida_extraida")["valor_unitario_resultado"].median()
             tab_mu = (
-                preco_medida_uf[preco_medida_uf["medida_extraida"].isin(top_medidas_nomes)]
-                .groupby(["medida_extraida", "uf"], as_index=False)
-                .agg(preco_mediano=("valor_unitario_resultado", "median"),
-                     desconto_mediano=("desconto_pct", "median"),
-                     n=("desconto_pct", "size"))
+                preco_medida_uf.groupby(["medida_extraida", "uf"], as_index=False)
+                .agg(preco_mediano=("valor_unitario_resultado", "median"), n=("valor_unitario_resultado", "size"))
             )
-            tab_mu = tab_mu[tab_mu["n"] >= 3].sort_values(["medida_extraida", "preco_mediano"], ascending=[True, False])
+            tab_mu["preco_mediano_nacional"] = tab_mu["medida_extraida"].map(mediana_nacional)
+            tab_mu["premio_pct"] = (tab_mu["preco_mediano"] / tab_mu["preco_mediano_nacional"] - 1) * 100
+            tab_mu["confianca"] = pd.cut(tab_mu["n"], bins=[0, 4, 14, float("inf")], labels=["baixa", "média", "alta"])
+            tab_mu = tab_mu[tab_mu["n"] >= 3].sort_values(["medida_extraida", "premio_pct"], ascending=[True, False])
             if tab_mu.empty:
                 st.info("Nenhuma combinação medida x UF com 3+ amostras ainda — normal com 20% de cobertura, cresce com a coleta.")
             else:
                 tab_mu["preco_mediano"] = tab_mu["preco_mediano"].round(2)
-                tab_mu["desconto_mediano"] = tab_mu["desconto_mediano"].round(1)
+                tab_mu["preco_mediano_nacional"] = tab_mu["preco_mediano_nacional"].round(2)
+                tab_mu["premio_pct"] = tab_mu["premio_pct"].round(1)
                 st.dataframe(
                     tab_mu.rename(columns={
-                        "medida_extraida": "Medida", "uf": "UF", "preco_mediano": "Preço final mediano (R$/un)",
-                        "desconto_mediano": "Desconto mediano (%)", "n": "Nº vendas",
+                        "medida_extraida": "Medida", "uf": "UF", "preco_mediano": "Preço mediano UF (R$/un)",
+                        "preco_mediano_nacional": "Preço mediano BR (R$/un)", "premio_pct": "Prêmio regional (%)",
+                        "n": "Nº vendas", "confianca": "Confiança",
                     }),
                     use_container_width=True, hide_index=True,
                 )
             st.caption("Só medida x UF com 3+ vendas (evita ruído de amostra única). Top 8 medidas mais pedidas nacionalmente.")
+
+            st.divider()
+            st.subheader("Mapa de calor — prêmio regional por medida")
+            medida_escolhida = st.selectbox("Medida:", top_medidas_nomes.tolist())
+            heat = tab_mu[tab_mu["medida_extraida"] == medida_escolhida].sort_values("premio_pct", ascending=True)
+            if heat.empty:
+                st.info("Sem amostra suficiente (3+ vendas) pra essa medida nos filtros atuais.")
+            else:
+                fig_heat = px.bar(
+                    heat, x="premio_pct", y="uf", orientation="h", color="premio_pct",
+                    color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
+                    labels={"premio_pct": "Prêmio regional (%)", "uf": "UF"},
+                    title=f"Prêmio regional — {medida_escolhida} (vs mediana nacional)",
+                    hover_data={"n": True},
+                )
+                fig_heat.update_layout(coloraxis_showscale=False, height=max(400, 24 * len(heat)))
+                fundo_transparente(fig_heat)
+                st.plotly_chart(fig_heat, use_container_width=True)
+                st.caption("Verde = paga acima da mediana nacional dessa medida. Vermelho = paga abaixo. Só UF com 3+ vendas.")
 
         st.subheader("Mapa por município")
         lat_lon = carregar_lat_lon()
