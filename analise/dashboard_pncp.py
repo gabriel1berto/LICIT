@@ -76,12 +76,14 @@ def fmt_abrev(v: float) -> str:
     return f"{sinal}{s}{sufixo}"
 
 
-def para_mil(v: float) -> float | None:
+def para_mil(v: float) -> float:
     """Valor em R$ mil, numérico de verdade (não string) — achado 08/jul/26: colunas
     formatadas como texto ("8 mil") quebravam ordenação/filtro nativo do st.dataframe
-    (vira sort alfabético, não numérico). Cabeçalho da coluna deve dizer "(R$ mil)"."""
+    (vira sort alfabético, não numérico). Cabeçalho da coluna deve dizer "(R$ mil)".
+    Retorna float("nan") pra vazio, não None — None vira dtype object, reabre o mesmo
+    bug (achado numa 2ª rodada: coluna com célula ausente virava "None" literal na tela)."""
     if pd.isna(v):
-        return None
+        return float("nan")
     return round(v / 1000, 1)
 
 
@@ -282,8 +284,14 @@ def main() -> None:
         st.divider()
         col_desc, col_ticket = st.columns([1, 2])
 
+        # achado 08/jul/26: "= None" pra coluna ausente (quando o filtro deixa só 1 tipo,
+        # ex: só Dispensa) virava dtype object (Python None), não NaN float — Streamlit
+        # quebrava com "TypeError: Expected numeric dtype, got object instead." ao tentar
+        # renderizar/ordenar. float("nan") mantém dtype numérico mesmo com célula vazia.
+        combos_rt = ["RP - Dispensa", "RP - Pregão", "CD - Dispensa", "CD - Pregão"]
+
         with col_desc:
-            st.subheader("Desconto por regime")
+            st.subheader("Desconto por regime x tipo")
             preco_regime = df.dropna(subset=["valor_unitario_estimado", "valor_unitario_resultado"])
             # valor_unitario_estimado <= R$1 é placeholder simbólico do órgão (sem preço de
             # referência real publicado) — dividir por isso explode a % de desconto. Excluído.
@@ -293,54 +301,55 @@ def main() -> None:
             else:
                 preco_regime = preco_regime.copy()
                 preco_regime["desconto_pct"] = (1 - preco_regime["valor_unitario_resultado"] / preco_regime["valor_unitario_estimado"]) * 100
-                desconto_regime = preco_regime.groupby("regime")["desconto_pct"].median()
-                for regime in ("RP", "CD"):
-                    valor = f"{desconto_regime[regime]:.1f}%" if regime in desconto_regime.index else "sem dado"
-                    st.metric(f"Desconto mediano — {regime}", valor)
+                desconto_rt = preco_regime.groupby("regime_tipo")["desconto_pct"].median()
+                col_a, col_b = st.columns(2)
+                for i, combo in enumerate(combos_rt):
+                    valor = f"{desconto_rt[combo]:.1f}%" if combo in desconto_rt.index else "sem dado"
+                    (col_a if i % 2 == 0 else col_b).metric(f"Desconto — {combo}", valor)
                 st.caption(
                     f"Amostra: {len(preco_regime)} itens (mediana — média é sensível a outlier de preço mal "
                     "publicado). Referência: fórmula de leilão assume 20% de margem."
                 )
 
         with col_ticket:
-            st.subheader("Ticket mediano por UF — Dispensa x Pregão")
+            st.subheader("Ticket mediano por UF — RP x CD, Dispensa x Pregão")
             st.caption(
                 "Mediana, não média — dispensa por valor tem teto ~R$50-60k (Lei 14.133/21), mas outras "
                 "hipóteses do Art. 75 não têm teto. Poucos processos grandes distorcem a média em UF com "
                 "amostra pequena; mediana não sofre isso."
             )
             tm = (
-                df.groupby(["uf", "tipo", "cod_compra"], as_index=False)["valor_item"].sum()
-                  .groupby(["uf", "tipo"], as_index=False)["valor_item"].median()
+                df.groupby(["uf", "regime_tipo", "cod_compra"], as_index=False)["valor_item"].sum()
+                  .groupby(["uf", "regime_tipo"], as_index=False)["valor_item"].median()
                   .rename(columns={"valor_item": "ticket_mediano"})
             )
-            tm_pivot = tm[tm["tipo"].isin(["Dispensa", "Pregão"])].pivot(index="uf", columns="tipo", values="ticket_mediano")
-            for col in ["Dispensa", "Pregão"]:
+            tm_pivot = tm[tm["regime_tipo"].isin(combos_rt)].pivot(index="uf", columns="regime_tipo", values="ticket_mediano")
+            for col in combos_rt:
                 if col not in tm_pivot.columns:
-                    tm_pivot[col] = None
+                    tm_pivot[col] = float("nan")
             tm_pivot = tm_pivot.round(0)
 
             preco_uf = df.dropna(subset=["valor_unitario_estimado", "valor_unitario_resultado"])
             preco_uf = preco_uf[preco_uf["valor_unitario_estimado"] > 1].copy()  # exclui R$0,01 simbólico
             if not preco_uf.empty:
                 preco_uf["desconto_pct"] = (1 - preco_uf["valor_unitario_resultado"] / preco_uf["valor_unitario_estimado"]) * 100
-                desconto_tipo = (
-                    preco_uf[preco_uf["tipo"].isin(["Dispensa", "Pregão"])]
-                    .groupby(["uf", "tipo"])["desconto_pct"].median()
-                    .unstack("tipo")
+                desconto_rt_uf = (
+                    preco_uf[preco_uf["regime_tipo"].isin(combos_rt)]
+                    .groupby(["uf", "regime_tipo"])["desconto_pct"].median()
+                    .unstack("regime_tipo")
                 )
-                for col in ["Dispensa", "Pregão"]:
-                    if col not in desconto_tipo.columns:
-                        desconto_tipo[col] = None
-                tm_pivot["Desconto med. Dispensa (%)"] = desconto_tipo["Dispensa"].round(1)
-                tm_pivot["Desconto med. Pregão (%)"] = desconto_tipo["Pregão"].round(1)
+                for col in combos_rt:
+                    if col not in desconto_rt_uf.columns:
+                        desconto_rt_uf[col] = float("nan")
+                for combo in combos_rt:
+                    tm_pivot[f"Desconto {combo} (%)"] = desconto_rt_uf[combo].round(1)
             else:
-                tm_pivot["Desconto med. Dispensa (%)"] = None
-                tm_pivot["Desconto med. Pregão (%)"] = None
+                for combo in combos_rt:
+                    tm_pivot[f"Desconto {combo} (%)"] = float("nan")
 
-            tm_pivot = tm_pivot.sort_values("Pregão", ascending=False, na_position="last")
-            tm_pivot_fmt = tm_pivot.reset_index().rename(columns={"uf": "UF", "Dispensa": "Ticket Dispensa (R$ mil)", "Pregão": "Ticket Pregão (R$ mil)"})
-            for c in ["Ticket Dispensa (R$ mil)", "Ticket Pregão (R$ mil)"]:
+            tm_pivot = tm_pivot.sort_values("RP - Pregão", ascending=False, na_position="last")
+            tm_pivot_fmt = tm_pivot.reset_index().rename(columns={"uf": "UF", **{c: f"Ticket {c} (R$ mil)" for c in combos_rt}})
+            for c in [f"Ticket {combo} (R$ mil)" for combo in combos_rt]:
                 tm_pivot_fmt[c] = tm_pivot_fmt[c].apply(para_mil)
             st.dataframe(tm_pivot_fmt, use_container_width=True, hide_index=True, height=350)
             st.caption("Desconto mediano: exclui preço de referência simbólico (R$0,01).")
