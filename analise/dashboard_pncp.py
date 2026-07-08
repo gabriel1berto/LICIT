@@ -194,10 +194,12 @@ def main() -> None:
     if not com_medida.empty:
         top_medidas = (
             com_medida.groupby("medida_extraida", as_index=False)
-                      .agg(n_itens=("medida_extraida", "size"), valor_total=("valor_item", "sum"))
+                      .agg(n_itens=("medida_extraida", "size"), n_vendidos=("tem_resultado", "sum"),
+                           valor_total=("valor_item", "sum"))
                       .sort_values("n_itens", ascending=False)
                       .head(15)
         )
+        top_medidas["n_vendidos"] = top_medidas["n_vendidos"].astype("int64")
         top_medidas["valor_total"] = top_medidas["valor_total"].round().astype("int64")
         top_medidas_nomes_8 = com_medida["medida_extraida"].value_counts().head(8).index
     else:
@@ -360,7 +362,11 @@ def main() -> None:
         if vencidos_geo.empty:
             st.info("Sem item com resultado nesse filtro.")
         else:
-            por_forn_br = vencidos_geo.groupby("nome_fornecedor", as_index=False)["valor_total_resultado"].sum()
+            por_forn_br = vencidos_geo.groupby("nome_fornecedor", as_index=False).agg(
+                valor_total_resultado=("valor_total_resultado", "sum"),
+                editais=("numero_controle_pncp", "nunique"),
+                itens=("numero_controle_pncp", "size"),
+            )
             total_br = por_forn_br["valor_total_resultado"].sum()
             top15_br = por_forn_br.sort_values("valor_total_resultado", ascending=False).head(15).copy()
             top15_br["participacao_pct"] = (top15_br["valor_total_resultado"] / total_br * 100).round().astype("int64")
@@ -368,9 +374,14 @@ def main() -> None:
             top15_br["valor_total_resultado"] = top15_br["valor_total_resultado"].apply(para_mil)
             top15_br = top15_br.rename(columns={
                 "nome_fornecedor": "Fornecedor", "valor_total_resultado": "Valor ganho (R$ mil)", "participacao_pct": "% do total BR",
-            })[["Ranking", "Fornecedor", "Valor ganho (R$ mil)", "% do total BR"]]
+                "editais": "Editais ganhos", "itens": "Itens vendidos",
+            })[["Ranking", "Fornecedor", "Valor ganho (R$ mil)", "% do total BR", "Editais ganhos", "Itens vendidos"]]
 
-            por_uf_forn = vencidos_geo.groupby(["uf", "nome_fornecedor"], as_index=False)["valor_total_resultado"].sum()
+            por_uf_forn = vencidos_geo.groupby(["uf", "nome_fornecedor"], as_index=False).agg(
+                valor_total_resultado=("valor_total_resultado", "sum"),
+                editais=("numero_controle_pncp", "nunique"),
+                itens=("numero_controle_pncp", "size"),
+            )
             total_uf = por_uf_forn.groupby("uf")["valor_total_resultado"].transform("sum")
             por_uf_forn["participacao_pct"] = (por_uf_forn["valor_total_resultado"] / total_uf * 100).round().astype("int64")
             top15_uf = (
@@ -382,7 +393,8 @@ def main() -> None:
             top15_uf = top15_uf.rename(columns={
                 "uf": "UF", "nome_fornecedor": "Fornecedor",
                 "valor_total_resultado": "Valor ganho (R$ mil)", "participacao_pct": "% do valor da UF",
-            })[["UF", "Ranking", "Fornecedor", "Valor ganho (R$ mil)", "% do valor da UF"]]
+                "editais": "Editais ganhos", "itens": "Itens vendidos",
+            })[["UF", "Ranking", "Fornecedor", "Valor ganho (R$ mil)", "% do valor da UF", "Editais ganhos", "Itens vendidos"]]
 
             col_forn_br, col_forn_uf = st.columns(2)
             with col_forn_br:
@@ -413,7 +425,8 @@ def main() -> None:
             mediana_nacional = preco_medida_uf.groupby("medida_extraida")["valor_unitario_resultado"].median()
             tab_mu = (
                 preco_medida_uf.groupby(["medida_extraida", "uf"], as_index=False)
-                .agg(preco_mediano=("valor_unitario_resultado", "median"), n=("valor_unitario_resultado", "size"))
+                .agg(preco_mediano=("valor_unitario_resultado", "median"), n=("valor_unitario_resultado", "size"),
+                     editais=("numero_controle_pncp", "nunique"))
             )
             tab_mu["preco_mediano_nacional"] = tab_mu["medida_extraida"].map(mediana_nacional)
             tab_mu["premio_pct"] = (tab_mu["preco_mediano"] / tab_mu["preco_mediano_nacional"] - 1) * 100
@@ -433,7 +446,7 @@ def main() -> None:
                         tab_mu_fmt.rename(columns={
                             "medida_extraida": "Medida", "uf": "UF", "preco_mediano": "Preço mediano UF (R$/un)",
                             "preco_mediano_nacional": "Preço mediano BR (R$/un)", "premio_pct": "Prêmio regional (%)",
-                            "n": "Nº vendas", "confianca": "Confiança",
+                            "n": "Itens vendidos", "editais": "Editais ganhos", "confianca": "Confiança",
                         }),
                         use_container_width=True, hide_index=True, height=450,
                     )
@@ -530,7 +543,10 @@ def main() -> None:
                     "resto é descrição genérica sem medida, ou câmara/agrícola (formato diferente, não capturado)."
                 )
             with col_medida_tab:
-                top_medidas_fmt = top_medidas.rename(columns={"medida_extraida": "Medida", "n_itens": "Nº itens", "valor_total": "Valor total (R$ mil)"})
+                top_medidas_fmt = top_medidas.rename(columns={
+                    "medida_extraida": "Medida", "n_itens": "Itens pedidos", "n_vendidos": "Itens vendidos",
+                    "valor_total": "Valor total (R$ mil)",
+                })
                 top_medidas_fmt["Valor total (R$ mil)"] = top_medidas_fmt["Valor total (R$ mil)"].apply(para_mil)
                 st.dataframe(top_medidas_fmt, use_container_width=True, hide_index=True, height=480)
 
@@ -545,7 +561,10 @@ def main() -> None:
                 else:
                     por_med_forn = (
                         venc_medida[venc_medida["medida_extraida"].isin(top_medidas_nomes_geral)]
-                        .groupby(["medida_extraida", "nome_fornecedor"], as_index=False)["valor_total_resultado"].sum()
+                        .groupby(["medida_extraida", "nome_fornecedor"], as_index=False)
+                        .agg(valor_total_resultado=("valor_total_resultado", "sum"),
+                             editais=("numero_controle_pncp", "nunique"),
+                             itens=("numero_controle_pncp", "size"))
                     )
                     total_med = por_med_forn.groupby("medida_extraida")["valor_total_resultado"].transform("sum")
                     por_med_forn["participacao_pct"] = (por_med_forn["valor_total_resultado"] / total_med * 100).round().astype("int64")
@@ -557,6 +576,7 @@ def main() -> None:
                     dom_medida = dom_medida.rename(columns={
                         "medida_extraida": "Medida", "nome_fornecedor": "Fornecedor dominante",
                         "valor_total_resultado": "Valor ganho (R$ mil)", "participacao_pct": "% da medida",
+                        "editais": "Editais ganhos", "itens": "Itens vendidos",
                     }).sort_values("% da medida", ascending=False)
                     st.dataframe(dom_medida, use_container_width=True, hide_index=True, height=450)
                     st.caption(
@@ -626,7 +646,9 @@ def main() -> None:
             conc = (
                 vencidos.dropna(subset=["nome_fornecedor"])
                         .groupby("nome_fornecedor", as_index=False)
-                        .agg(valor_ganho=("valor_total_resultado", "sum"), n_processos=("numero_controle_pncp", "nunique"))
+                        .agg(valor_ganho=("valor_total_resultado", "sum"),
+                             n_processos=("numero_controle_pncp", "nunique"),
+                             n_itens=("numero_controle_pncp", "size"))
                         .sort_values("valor_ganho", ascending=False)
                         .head(15)
             )
@@ -652,8 +674,8 @@ def main() -> None:
 
             with col_conc_tab:
                 st.subheader("Recorrência — processos vencidos")
-                tabela_forn = conc[["nome_fornecedor", "n_processos", "valor_ganho", "participacao_pct"]].rename(
-                    columns={"nome_fornecedor": "Fornecedor", "n_processos": "Processos vencidos",
+                tabela_forn = conc[["nome_fornecedor", "n_processos", "n_itens", "valor_ganho", "participacao_pct"]].rename(
+                    columns={"nome_fornecedor": "Fornecedor", "n_processos": "Editais ganhos", "n_itens": "Itens vendidos",
                              "valor_ganho": "Valor ganho (R$ mil)", "participacao_pct": "% do total"}
                 )
                 tabela_forn["Valor ganho (R$ mil)"] = tabela_forn["Valor ganho (R$ mil)"].apply(para_mil)
