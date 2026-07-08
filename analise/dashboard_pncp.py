@@ -180,7 +180,11 @@ def main() -> None:
             labels={col_geo: metrica_geo, "uf": "UF", "regime_tipo": "Regime - Tipo"},
             title=f"{metrica_geo} de licitação de pneu por UF, RP x CD x tipo (PNCP direto)",
         )
-        fig.update_layout(barmode="stack", legend_title_text="")
+        # achado 08/jul/26: altura default do plotly (~450px) cabe só ~14-15 barras de UF —
+        # com as 27 UFs possíveis, as do meio (ex: MG) ficavam cortadas fora da área visível
+        # da figura, não só escondidas por scroll. Altura proporcional ao nº de categorias
+        # no eixo Y garante que todas as UFs selecionadas apareçam sempre.
+        fig.update_layout(barmode="stack", legend_title_text="", height=max(450, 28 * len(ordem_uf)))
         fundo_transparente(fig)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -296,28 +300,31 @@ def main() -> None:
         else:
             por_forn_br = vencidos_geo.groupby("nome_fornecedor", as_index=False)["valor_total_resultado"].sum()
             total_br = por_forn_br["valor_total_resultado"].sum()
-            dominante_br = por_forn_br.sort_values("valor_total_resultado", ascending=False).iloc[0]
-            pct_br = dominante_br["valor_total_resultado"] / total_br * 100 if total_br else 0
-
-            col_br1, col_br2 = st.columns(2)
-            col_br1.metric("Fornecedor dominante — Brasil", dominante_br["nome_fornecedor"])
-            col_br2.metric("% do valor ganho nacional", f"{pct_br:.0f}%", help=f"R$ {fmt_abrev(dominante_br['valor_total_resultado'])} de R$ {fmt_abrev(total_br)} nos filtros atuais")
+            top15_br = por_forn_br.sort_values("valor_total_resultado", ascending=False).head(15).copy()
+            top15_br["participacao_pct"] = (top15_br["valor_total_resultado"] / total_br * 100).round().astype("int64")
+            top15_br["Ranking"] = range(1, len(top15_br) + 1)
+            top15_br["valor_total_resultado"] = top15_br["valor_total_resultado"].apply(fmt_abrev)
+            top15_br = top15_br.rename(columns={
+                "nome_fornecedor": "Fornecedor", "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% do total BR",
+            })[["Ranking", "Fornecedor", "Valor ganho (R$)", "% do total BR"]]
+            st.caption("Top 15 — Brasil:")
+            st.dataframe(top15_br, use_container_width=True, hide_index=True)
 
             por_uf_forn = vencidos_geo.groupby(["uf", "nome_fornecedor"], as_index=False)["valor_total_resultado"].sum()
             total_uf = por_uf_forn.groupby("uf")["valor_total_resultado"].transform("sum")
             por_uf_forn["participacao_pct"] = (por_uf_forn["valor_total_resultado"] / total_uf * 100).round().astype("int64")
-            dominante = (
-                por_uf_forn.sort_values("valor_total_resultado", ascending=False)
-                           .groupby("uf").first().reset_index()
-                           .sort_values("valor_total_resultado", ascending=False)
+            top15_uf = (
+                por_uf_forn.sort_values(["uf", "valor_total_resultado"], ascending=[True, False])
+                           .groupby("uf").head(15)
             )
-            dominante["valor_total_resultado"] = dominante["valor_total_resultado"].apply(fmt_abrev)
-            dominante = dominante.rename(columns={
-                "uf": "UF", "nome_fornecedor": "Fornecedor dominante",
+            top15_uf["Ranking"] = top15_uf.groupby("uf").cumcount() + 1
+            top15_uf["valor_total_resultado"] = top15_uf["valor_total_resultado"].apply(fmt_abrev)
+            top15_uf = top15_uf.rename(columns={
+                "uf": "UF", "nome_fornecedor": "Fornecedor",
                 "valor_total_resultado": "Valor ganho (R$)", "participacao_pct": "% do valor da UF",
-            })
-            st.caption("Por UF:")
-            st.dataframe(dominante, use_container_width=True, hide_index=True)
+            })[["UF", "Ranking", "Fornecedor", "Valor ganho (R$)", "% do valor da UF"]]
+            st.caption("Top 15 por UF (use os filtros de UF na barra lateral pra focar num estado):")
+            st.dataframe(top15_uf, use_container_width=True, hide_index=True, height=400)
             st.caption(
                 "Fornecedor com maior valor ganho (itens com resultado), Brasil e por UF, nos filtros atuais. "
                 "Amostra parcial — só processos já com detalhe coletado. Marca/modelo do produto não é "
