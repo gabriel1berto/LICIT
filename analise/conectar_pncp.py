@@ -104,6 +104,15 @@ VALOR_UNITARIO_TETO_SANIDADE = 50_000
 # (R$17,3M, R$5,8M, R$2,1M, R$1,5M... todos exames manuais confirmaram erro de dado, não
 # pneu caro de verdade).
 
+# achado 08/jul/26: Araxá/MG, "Credenciamento", TODOS os 10 itens com quantidade
+# implausível pro porte do município (ex: 30.114 unidades de PNEU 215/75R17.5 — nenhum
+# item passa do teto de valor_unitario sozinho, preço parece razoável, o erro está na
+# quantidade). Processo republicado 2x (-000101 e -000209, dedup mantém -000101) — exceção
+# manual documentada em vez de teto genérico de item/processo, porque um teto que cortasse
+# isso também cortaria demanda real grande e legítima (ex: RJ tem item de R$8,8M plausível
+# — frota real de capital). Decisão explícita do usuário: excluir processo pontualmente.
+PROCESSOS_EXCLUIDOS_DADO_RUIM = {"19493732000199-1-000101/2025", "19493732000199-1-000209/2025"}
+
 
 def carregar_base_pncp() -> pd.DataFrame:
     """1 linha por item elegível (eh_pneu=1), mesmo shape de colunas da base ComprasGOV
@@ -127,9 +136,17 @@ def carregar_base_pncp() -> pd.DataFrame:
                codigo_ibge, modalidade_nome, srp, data_abertura_proposta,
                valor_total_estimado
         FROM detalhes
+        WHERE valor_total_estimado IS NULL OR valor_total_estimado <= 300000000
         """,
         ENGINE,
     )
+    # achado 08/jul/26: item com valor_unitario "razoável" (<50k) escapa o teto de item, mas
+    # o PROCESSO inteiro pode estar corrompido na fonte — Coromandel/MG tinha
+    # valor_total_estimado = R$7,48 BILHÕES (processo inteiro, não só o item já cortado
+    # acima). Teto de R$300 milhões no processo: generoso o bastante pra nunca cortar
+    # licitação real (mesmo consórcio estadual grande fica bem abaixo disso), mas corta
+    # esse tipo de erro sistêmico de processo inteiro.
+
     # achado 08/jul/26: retificação de edital no PNCP gera numero_controle_pncp novo pro
     # MESMO processo (mesmo órgão, mesma data de abertura, mesmo valor total) — 500 grupos
     # duplicados achados (1.406 de 17.660 processos, ~8%), ex: Araxá/MG "-000101" e "-000209"
@@ -161,6 +178,8 @@ def carregar_base_pncp() -> pd.DataFrame:
         """,
         ENGINE,
     )
+
+    itens = itens[~itens["numero_controle_pncp"].isin(PROCESSOS_EXCLUIDOS_DADO_RUIM)]
 
     # inner, não left — "detalhes" já teve a dedup de processo republicado acima; left
     # traria de volta os itens do numero_controle_pncp duplicado que a dedup removeu.
