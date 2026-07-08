@@ -136,6 +136,7 @@ RE_EXCLUSAO_SERVICO = re.compile(
     # se RE_MEDIDA_R/RE_MEDIDA_AMPLA for expandido no futuro pra cobrir esses formatos,
     # precisam estar aqui pra continuar corretamente excluídos como serviço, não venda nova.
     r"recauchutagem\s+(de\s+)?pneus?|recupera[çc][ãa]o\s+de\s+pneus?|substitui[çc][ãa]o\s+(de\s+)?pneus?|"
+    r"ressolagem\s+(de\s+)?pneus?|"
     r"troca\s+de\s+(pneus?|bicos?)|"
     r"n[úu]cleo.*v[áa]lvula|v[áa]lvula.*n[úu]cleo",
     re.IGNORECASE,
