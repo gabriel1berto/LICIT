@@ -26,10 +26,22 @@ load_dotenv()
 # derruba conexão idle entre reruns do Streamlit.
 ENGINE = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
 
-# medida tipo "215/75 R17,5" ou "205/60 R16" — captura largura/perfil/aro. Só cobre o
-# padrão passeio/caminhão/moto; agrícola ("18.4-30") e câmara de ar têm formato próprio,
-# não capturados aqui — ficam como NaN em medida_extraida.
+# medida passeio/caminhão: "215/75 R17,5" ou "205/60 R16" — largura/perfil/aro com R.
 RE_MEDIDA_CAPTURA = re.compile(r"(\d{3})\s*/\s*(\d{2})\s*[Rr]\s*(\d{2}(?:[.,]\d)?)")
+# achado 08/jul/26 auditando cobertura de medida por categoria: regex acima só cobria
+# Caminhão (76%) e Passeio (34%) — Agrícola 0%, Câmara de ar 3%, Moto 3%. 3 padrões novos
+# pra cobrir formato real visto na amostra:
+# - agrícola/câmara sem R, com hífen/X: "12.4-24", "12.4X24", "900 X 20", "12-16,5"
+# (decimal em qualquer um dos 2 números, ou nenhum — "900 X 20" é 2 inteiros)
+RE_MEDIDA_AGRICOLA = re.compile(r"\b(\d{1,4}(?:[.,]\d{1,2})?)\s*[-xX/]\s*(\d{2}(?:[.,]\d{1,2})?)\b")
+# - câmara com R colado sem espaço: "1000R20", "750R16" (formato caminhão sem barra/espaço)
+RE_MEDIDA_CAMARA_COLADA = re.compile(r"\b(\d{3,4})[Rr](\d{2})\b")
+# - câmara/passeio sem a letra R: "165/70 14" (3 números) ou "1000/20", "750/16" (2 números,
+# largura sem perfil separado — mesma notação do colado acima, só com barra em vez de R)
+RE_MEDIDA_SEM_R = re.compile(r"\b(\d{3})\s*/\s*(\d{2})\s+(\d{2}(?:[.,]\d)?)\b")
+RE_MEDIDA_BARRA_2NUM = re.compile(r"\b(\d{3,4})\s*/\s*(\d{2})\b")
+# - moto: "referencia 120/80, aro 18" / "MEDIDAS: 90/90; ARO: 21" / "160/60; ARO: R17"
+RE_MEDIDA_MOTO = re.compile(r"(\d{2,3})\s*/\s*(\d{2,3})[,;\s]+aro[:\s]*r?(\d{2})", re.IGNORECASE)
 
 
 def _extrair_medida(descricao: str) -> str | None:
@@ -37,13 +49,32 @@ def _extrair_medida(descricao: str) -> str | None:
     ("Pneu ônibus 295/80R22.5 - 6un. Pneu Hilux 265/70R16 - 4un. Pneu van 195/75R16 -
     4un") — pegar só a 1ª medida encontrada atribui o valor errado à medida errada
     (203 itens têm 2+ medidas distintas na descrição). Se achar mais de 1 medida
-    diferente, a descrição é ambígua — não confiável, retorna None em vez de chutar."""
+    diferente, a descrição é ambígua — não confiável, retorna None em vez de chutar.
+    Tenta os padrões na ordem: R-completo (mais confiável) → sem-R → colado → moto →
+    agrícola (mais genérico, por último — maior risco de falso positivo com número
+    solto tipo "5 ANOS DE GARANTIA")."""
     if not isinstance(descricao, str):
         return None
-    matches = RE_MEDIDA_CAPTURA.findall(descricao)
-    if not matches:
+    medidas: set[str] = set()
+    for a, b, c in RE_MEDIDA_CAPTURA.findall(descricao):
+        medidas.add(f"{a}/{b} R{c.replace(',', '.')}")
+    if not medidas:
+        for a, b, c in RE_MEDIDA_SEM_R.findall(descricao):
+            medidas.add(f"{a}/{b} R{c.replace(',', '.')}")
+    if not medidas:
+        for a, b in RE_MEDIDA_CAMARA_COLADA.findall(descricao):
+            medidas.add(f"{a}-{b}")  # "1000R20" -> "1000-20" (sem perfil, notação caminhão)
+    if not medidas:
+        for a, b, c in RE_MEDIDA_MOTO.findall(descricao):
+            medidas.add(f"{a}/{b} R{c}")
+    if not medidas:
+        for a, b in RE_MEDIDA_BARRA_2NUM.findall(descricao):
+            medidas.add(f"{a}-{b}")  # "1000/20" -> "1000-20", mesma notação do colado
+    if not medidas:
+        for a, b in RE_MEDIDA_AGRICOLA.findall(descricao):
+            medidas.add(f"{a.replace(',', '.')}-{b.replace(',', '.')}")
+    if not medidas:
         return None
-    medidas = {f"{a}/{b} R{c.replace(',', '.')}" for a, b, c in matches}
     if len(medidas) > 1:
         return None
     return medidas.pop()
