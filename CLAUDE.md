@@ -115,33 +115,9 @@ Frete               = cotação manual pós-análise
 
 ## 7. Stack e Ferramentas
 
-### Scripts (C:\Users\ghumb\code\licit\)
+**Lista de scripts e variáveis de ambiente: dono canônico é `README.md`** (seções "Estrutura" e "Setup") — não duplicar tabela aqui de novo. Esta seção guarda só o que é específico do assistente, não do repo em si.
 
-| Arquivo | Função |
-|---|---|
-| pncp_radar.py | Radar diário de editais no PNCP + email |
-| analisa_edital.py | Análise de edital via Claude API → card Notion (lê pdf/docx/txt/html, trava se extração for insuficiente, anexa docs originais) |
-| bransales_scraper.py | Scraper Bransales |
-| cantu_scraper.py | Scraper Cantu/SpeedMax |
-| gp_scraper.py | Scraper GP Fácil |
-| green_scraper.py | Scraper PneuGreen |
-| notion_upload.py | Upload resultados Bransales → Notion REST API |
-| cantu_upload.py | Upload resultados Cantu → Notion REST API |
-| preencher_planilha_precificacao.py | Preenche cópia da planilha modelo de precificação (Sheets) com resultado dos 4 scrapers + referência do edital — ver §15.5 |
-| precificacao_gsheets.py | ⚠️ DEPRECADO — hardcoded pro Cantagalo (jun/2026), mantido só por histórico. Não usar em edital novo. |
-| items_X.json / results_X_*.json | Input/output de cotação por edital, nome muda por processo (ex: `items_doutorulysses.json`) — gitignorado (`*.json`), dado local |
-| analise_X.json | Saída de `analisa_edital.py` — itens estruturados do edital, usada como input do `preencher_planilha_precificacao.py` |
-| gp_cookies.json | Cookies GP Fácil (renovar via MCP browser quando expirar) |
-
-### Variáveis de ambiente (.env)
-
-```
-ANTHROPIC_API_KEY=...
-NOTION_TOKEN=...
-NOTION_DB_ID=f5662b50-f2f3-467e-9051-b6b9f683ff88  # DB Bransales Cantagalo
-```
-
-**Atenção:** NOTION_TOKEN do .env só acessa páginas explicitamente compartilhadas com a integração "Claude Code" (ID: `326ca98e-9281-81f6-928d-00279a7fa3fa`). Para páginas não compartilhadas, usar MCP Notion.
+**NOTION_TOKEN (.env):** só acessa páginas explicitamente compartilhadas com a integração "Claude Code" (ID: `326ca98e-9281-81f6-928d-00279a7fa3fa`). `NOTION_DB_ID=f5662b50-f2f3-467e-9051-b6b9f683ff88` é o DB Bransales Cantagalo. Para páginas não compartilhadas, usar MCP Notion em vez da REST API do `.env`.
 
 ---
 
@@ -238,6 +214,8 @@ Planilha FORNECEDORES — INTELIGÊNCIA COMPETITIVA: Google Drive ID `19ehlc0kVN
 
 ## 13. Roadmap AI-FIRST (Supabase — ativar com ~3-4 meses de histórico)
 
+**Não confundir com o Supabase do pipeline de mercado nacional (`analise/`, projeto `LICIT` koqsgnvmnzkqzxnskzgq) — esse já está ativo desde 07/jul/2026, schema diferente (editais/detalhes/itens/resultados, ver README.md). O roadmap abaixo é uma segunda base, ainda não construída, pra dado de negócio (histórico de propostas/concorrentes), separada da de mercado.**
+
 **Não evoluir proativamente — só quando usuário solicitar.**
 
 Tabelas planejadas:
@@ -308,7 +286,7 @@ Formato final de precificação é planilha, não tabela Notion (decisão 09/jul
 - **Modelo mestre:** https://drive.google.com/drive/folders/1Nf10IsY2Gzpf_1WXWuKBC0B58vAbnuXX — **nunca editar direto**, sempre duplicar (`copy_file` MCP) antes de preencher. Toda mudança estrutural (coluna nova, fórmula) vai no modelo E na cópia ativa, nunca só numa.
 - **Estrutura (12/jul/2026):** 4 blocos empilhados (Bransales linha 5-16, Cantu 20-31, GP 35-46, Green Pneus 50-61), 12 linhas de item cada. Colunas de entrada A-L: Item / **Produto** (tipo: Pneu/Câmara de ar/Roda/etc) / **Modelo** (medida) / **Especificação Técnica** (IC/IV/Treadwear/Construção/INMETRO, N/D se ausente) / Critérios técnicos / Distribuidor / Marca / Link / Observação / Preço UN / **Ref. Edital** (era "Preço Leilão", renomeado) / Qtde. Coluna **U = Vencedor** (fórmula, compara Preço UN do mesmo item nos 4 blocos, marca "🏆 Vencedor" no mais barato — **PT-BR usa `;` não `,` como separador de argumento de função**, `,` só decimal). Colunas N-Q + W/X/Y = fórmula (Investimento/Frete/Imposto/Preço de venda/Margem ruim/boa/líquida) — uniformizadas nos 4 blocos, nunca escrever nelas. Notas de documentação (hover) em cada cabeçalho.
 - **Timestamp:** script grava "Última cotação: DD/MM/AAAA HH:MM" na linha do nome do distribuidor toda vez que roda.
-- **OAuth Sheets API:** configurado 09/jul/2026 (`credentials.json`/`token.json` no repo, gitignorado). Projeto Google Cloud usado: `mindful-hall-501916-s4` (diferente do suspenso por abuso).
+- **OAuth Sheets API:** configurado 09/jul/2026 (`credentials.json`/`token.json` no repo, gitignorado). Projeto Google Cloud usado: `mindful-hall-501916-s4` (diferente do suspenso por abuso). App em modo "Teste" — `ghumberto.eng@gmail.com` já cadastrado como test user (limite 100 usuários, não precisa publicar).
 - **Script ativo:** `preencher_planilha_precificacao.py <spreadsheet_id> <analise.json> --bransales X --cantu X --gp X --green X` — **`precificacao_gsheets.py` é o script antigo, deprecado, não usar.**
 - Testado em 2 editais reais (Doutor Ulysses-PR, Nova Aurora-PR). Bug crítico corrigido 09/jul: `apto=False` no resultado do scraper não é sinônimo de "sem estoque" — pode ser "achou produto real, critério não confirmado" (⚠️ Parcial). Script antigo escondia esse produto real como "Sem estoque"; corrigido em `linha_para_item()`.
 
@@ -337,8 +315,9 @@ Depois que o usuário preenche "📊 Análise do Leilão" de um card com o resul
 4. Não evoluir metabase-write ou Supabase proativamente
 5. Antes de criar qualquer coisa (script, planilha, página): explicar o plano e perguntar se há custos/requests externos envolvidos
 6. Ao detectar novo edital relevante: apresentar tabela de breakdown (itens, valores, risco) antes de propor ação
-7. **`analisa_edital.py` nunca pode alucinar (regra travada em código, 09/jul/2026):** todo documento do edital deve ser aberto e lido independente do formato (pdf/docx/txt/html/fallback best-effort — nunca pular arquivo em silêncio). Se a extração ficar abaixo de `LIMIAR_CHARS_CONFIAVEIS` (500 chars confiáveis), o processo levanta `ExtracaoInsuficiente` e **para antes de chamar Claude ou escrever no Notion** — nunca gerar análise sem base documental real. Não relaxar esse limiar nem contornar a trava sem pedido explícito.
+7. **`analisa_edital.py` nunca pode alucinar (regra travada em código, 09/jul/2026):** todo documento do edital deve ser aberto e lido independente do formato (pdf/docx/txt/html/fallback best-effort — nunca pular arquivo em silêncio). Se a extração ficar abaixo de `LIMIAR_CHARS_CONFIAVEIS` (500 chars confiáveis), o processo levanta `ExtracaoInsuficiente` e **para antes de chamar Claude ou escrever no Notion** — nunca gerar análise sem base documental real. Não relaxar esse limiar nem contornar a trava sem pedido explícito. **Mesma regra vale pro `cabecalho.valor_total`:** nunca confiar em texto livre do documento (já variou entre chamadas pro mesmo edital) — usar `valorTotalEstimado` da API do PNCP via `api/consulta/v1` (não `api/pncp/v1`, que retorna esse campo sempre `None`) quando disponível. Divergência vs soma dos itens vira alerta bloqueante no card, nunca é resolvida escolhendo um número sozinho (ver `validar_valor_total()`).
 8. **Testar mudança nesse pipeline só manualmente, 1 ferramenta por vez** — usuário decidiu (09/jul/2026) não automatizar o fluxo completo (buscar edital → card → análise → precificação) ainda. Rodar uma etapa, parar, esperar feedback antes de encadear a próxima.
-9. **Formato do card de análise (com coluna Produto + docs anexados) é padrão aprovado (09/jul/2026)** — não redesenhar sem pedido explícito novo.
+9. **Formato do card de análise (com coluna Produto + docs anexados) é padrão aprovado (09/jul/2026)** — não redesenhar sem pedido explícito novo. Estrutura fixa: ANÁLISE DE EDITAL → DOCUMENTOS USADOS NA ANÁLISE → HABILITAÇÃO → PRODUTOS (com coluna Produto) → PONTOS-CHAVE → LEILÃO → DOCUMENTOS DA PROPOSTA. Mudanças futuras devem ser aditivas/corretivas (bug), não redesign.
 10. **Ciclo de Aprendizado segue processo fixo de 6 passos** (ver §15.6) — sempre mostrar rascunho e esperar confirmação antes de escrever no Notion.
 11. **Manter README.md, este arquivo e a descrição das ferramentas no Notion sincronizados com o código** — toda vez que um bug for corrigido ou uma feature mudar comportamento, atualizar a documentação relevante no mesmo momento, não depois. Motivo: usuário já foi pego de surpresa por ferramenta com bug que "voltou" — documentação desatualizada é o mesmo risco.
+12. **Arquitetura "1 dono só por fato" (fixada 09/jul/2026):** cada informação vive em exatamente 1 lugar canônico — `README.md` (setup/estrutura/scripts), `CLAUDE.md` (regras operacionais, negócio, processo), memória do assistente (feedback/decisão, só ponteiro pros dois acima quando o fato já existe ali) e Notion (estado vivo de cada processo/edital). Nunca copiar o mesmo fato em 2 lugares — se precisar citar, linkar/referenciar. A trava real que sustenta isso: toda memória LICIT tem uma entrada dizendo pra sempre ler este arquivo primeiro (ver memória `feedback_licit_sempre_ler_claudemd`), já que CLAUDE.md não é carregado automaticamente fora do repo. Política completa documentada no Notion (página "Arquitetura de Documentação — LICIT").
