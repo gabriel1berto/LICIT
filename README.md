@@ -7,9 +7,11 @@ Venda de pneus para licitações públicas (pregão eletrônico e dispensa eletr
 ```
 RADAR (pncp_radar.py)              → email diário com edital novo publicado no PNCP
 ANÁLISE DE EDITAL (analisa_edital.py) → baixa docs do PNCP, Claude extrai critérios → card Notion
-COTAÇÃO (*_scraper.py)             → busca preço em cada distribuidor → Notion
+COTAÇÃO (*_scraper.py)             → busca preço em cada distribuidor
+PRECIFICAÇÃO (preencher_planilha_precificacao.py) → planilha Sheets (modelo no Drive)
 HABILITAÇÃO                        → checklist de documentação da empresa (Notion)
 PROPOSTA                           → carta espelha linguagem do edital, preço = custo × 1.24
+CICLO DE APRENDIZADO               → após sessão, compara nossa cotação vs resultado real (Notion)
 ```
 
 Contexto completo do negócio (riscos, fórmulas, habilitação, Notion): `CLAUDE.md`.
@@ -19,16 +21,23 @@ Contexto completo do negócio (riscos, fórmulas, habilitação, Notion): `CLAUD
 ```
 licit/
 ├── pncp_radar.py            Radar diário — busca edital novo no PNCP, envia email
-├── analisa_edital.py        Baixa edital via API PNCP, Claude extrai JSON estruturado → card Notion
+├── analisa_edital.py        Baixa edital via API PNCP (pdf/docx/txt/html), Claude extrai JSON → card Notion.
+│                            Trava (ExtracaoInsuficiente) se o documento não puder ser lido com confiança —
+│                            nunca analisa sem base documental real. Usa valorTotalEstimado oficial do PNCP
+│                            (api/consulta/v1), não o texto livre. Anexa os documentos originais no card.
 ├── bransales_scraper.py     Cotação — Bransales Atacadista
 ├── cantu_scraper.py         Cotação — Cantu / SpeedMax B2B
 ├── gp_scraper.py            Cotação — GP Fácil (cookies exportados — reCAPTCHA bloqueia login direto)
-├── green_scraper.py         Cotação — PneuGreen
+├── green_scraper.py         Cotação — PneuGreen (só ele valida se a medida do produto bate com a pedida
+│                            antes de aceitar — os outros 3 usam URL estruturada por medida, mais seguro)
 ├── notion_upload.py         Upload resultado Bransales → Notion (REST API)
 ├── cantu_upload.py          Upload resultado Cantu → Notion (REST API)
-├── precificacao_gsheets.py  Appenda resultado de cotação numa planilha Google Sheets
+├── preencher_planilha_precificacao.py  Preenche cópia da planilha modelo (Sheets) com resultado dos
+│                            4 scrapers + referência do edital — ver seção "Precificação" abaixo
+├── precificacao_gsheets.py  ⚠️ DEPRECADO — hardcoded pro Cantagalo (jun/2026), não usar em edital novo
 ├── sample_objeto.py         Script de exploração pontual da API PNCP (objetoCompra)
-├── items_*.json / results_*.json   Input/output de cotação por edital (gitignorado — dado local)
+├── items_X.json / results_X_*.json / analise_X.json   Input/output de cotação por edital
+│                            (gitignorado — dado local, nome muda por processo)
 │
 ├── analise/                 Pipeline de análise de mercado (dado público PNCP)
 │   ├── coletor_pncp.py         Fase 1 — descobre editais (API de busca), grava em Postgres
@@ -61,6 +70,17 @@ Fase 2 não descobre edital novo sozinha — só fase 1 faz isso (API não permi
 - **Dashboard público:** https://gsuh5zthgffvohk8xqbuhe.streamlit.app/
 - **Documentação do achado/histórico de bugs de filtro:** Notion → [Dados públicos](https://app.notion.com/p/395ca98e9281806684a6c34186a520ca)
 
+## Precificação (planilha)
+
+- **Modelo mestre:** [pasta no Drive](https://drive.google.com/drive/folders/1Nf10IsY2Gzpf_1WXWuKBC0B58vAbnuXX) — nunca editar direto, sempre duplicar (`copy_file`) antes de preencher
+- 4 blocos empilhados (Bransales/Cantu/GP/Green), colunas de entrada A-L (Item/Produto/Modelo/Especificação Técnica/Critérios/Distribuidor/Marca/Link/Observação/Preço UN/Ref. Edital/Qtde) + coluna Vencedor (fórmula, compara os 4 blocos). Colunas de cálculo (Investimento/Frete/Imposto/Preço de venda/Margem) são fórmula — nunca escrever nelas.
+- `python preencher_planilha_precificacao.py <spreadsheet_id> <analise.json> --bransales X --cantu X --gp X --green X`
+- Detalhe completo: `CLAUDE.md` §15.5
+
+## Ciclo de Aprendizado
+
+Depois de cada sessão de lances, comparar nossa cotação vs resultado real e registrar em [Ciclo de aprendizado](https://app.notion.com/p/392ca98e928180c6a1bbcef7942f583b) (4 pontos fixos: Concorrentes/Produto/Edital/Processo). Processo documentado em `CLAUDE.md` §15.6.
+
 ## Setup
 
 Variáveis de ambiente (`.env`, nunca commitado):
@@ -73,6 +93,8 @@ CANTU_EMAIL, CANTU_PASSWORD
 GREEN_EMAIL, GREEN_PASSWORD
 DATABASE_URL              # Postgres/Supabase, pooler transaction mode
 ```
+
+`credentials.json`/`token.json` (OAuth Google Sheets, gitignorados) — setup de 1x só, ver docstring de `preencher_planilha_precificacao.py`.
 
 Radar (`requirements_radar.txt`) e pipeline de mercado (`analise/requirements.txt`) têm dependências separadas de propósito — o radar não precisa puxar `psycopg2`/`streamlit`.
 

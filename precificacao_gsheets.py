@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 """
+⚠️ DEPRECADO (09/jul/2026) — usar `preencher_planilha_precificacao.py` no lugar.
+
+Esse script tem os 12 itens do Cantagalo (jun/2026) HARDCODED em REF_UN/MEDIDA/
+QTDE — só serve pra aquele edital específico. O SPREADSHEET_ID abaixo aponta
+pro arquivo de REFERÊNCIA original (não pra planilha modelo do Drive) — rodar
+isso sem passar --spreadsheet-id explícito risca escrever em cima da referência.
+Mantido só por histórico. Não editar/reusar pra edital novo.
+
 precificacao_gsheets.py — Appenda resultados de scraper na planilha de precificação.
 
 Uso:
