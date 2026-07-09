@@ -475,7 +475,7 @@ def b_table(headers: list, rows: list):
 
 # ─── BUILDER DO CARD ──────────────────────────────────────────────────────────
 
-def build_blocks(a: dict) -> list:
+def build_blocks(a: dict, doc_blocks: list | None = None) -> list:
     c    = a["cabecalho"]
     h    = a["habilitacao"]
     al   = a["alertas"]
@@ -506,6 +506,9 @@ def build_blocks(a: dict) -> list:
         [["✅", x] for x in al["vantagens"]]
     )
     bl.append(b_table(["", ""], alert_rows))
+
+    if doc_blocks:
+        bl.extend(doc_blocks)
 
     # ── HABILITAÇÃO ──────────────────────────────────────────────────────────
     bl.append(b_divider())
@@ -660,7 +663,7 @@ def main():
     if doc_blocks:
         doc_blocks = [b_divider(), b_h2("📎 DOCUMENTOS USADOS NA ANÁLISE")] + doc_blocks
 
-    novos = build_blocks(analise) + doc_blocks
+    novos = build_blocks(analise, doc_blocks)
     notion_append(notion_id, novos)
     print(f"   {len(novos)} blocos inseridos ({len(doc_blocks)} de anexo)", file=sys.stderr)
 
