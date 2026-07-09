@@ -71,12 +71,24 @@ def formatar_especificacao(resultado_item: dict) -> str:
     ])
 
 
+SEM_ESTOQUE_SENTINELS = {"", "— Sem estoque", "-- Sem estoque"}
+
+
 def linha_para_item(resultado_item: dict | None, distribuidor: str) -> dict:
     """Monta os valores de A-L pra 1 item, dado o resultado do scraper (ou None se sem estoque).
     'Produto' = medida pedida no edital (vem de fora). 'Marca' = nome do produto achado
     (segue o padrao da planilha original: essa coluna guarda o nome completo, tipo
-    'Bransales B Van', nao so a marca pura)."""
-    if resultado_item is None or not resultado_item.get("apto"):
+    'Bransales B Van', nao so a marca pura).
+
+    Bug achado 09/jul/2026: 'apto=False' NAO significa sem estoque — pode ser
+    'achou produto mas tem criterio nao confirmado' (ex: lonas nao publicada).
+    Antes esse caso virava 'Sem estoque' e o produto real achado sumia da
+    planilha. Agora so trata como sem estoque quando o scraper de fato nao
+    achou nome nenhum (sentinela 'Sem estoque' ou nome vazio)."""
+    nome = (resultado_item or {}).get("nome", "")
+    sem_estoque = resultado_item is None or nome in SEM_ESTOQUE_SENTINELS
+
+    if sem_estoque:
         obs_sem_estoque = (resultado_item or {}).get("obs") or f"Nenhum produto disponível na {distribuidor}"
         return {
             "especificacao": "",
@@ -88,8 +100,8 @@ def linha_para_item(resultado_item: dict | None, distribuidor: str) -> dict:
         }
     return {
         "especificacao": formatar_especificacao(resultado_item),
-        "criterio": "⚠️ Parcial",
-        "marca": resultado_item.get("nome", ""),
+        "criterio": "✅ Verificado" if resultado_item.get("apto") else "⚠️ Parcial",
+        "marca": nome,
         "link": resultado_item.get("url", ""),
         "obs": resultado_item.get("obs", ""),
         "preco_un": resultado_item.get("preco_un", ""),
