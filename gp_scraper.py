@@ -75,10 +75,14 @@ def extract_brand(nome: str) -> str:
 
 
 def build_medida_gp(cfg: dict) -> str:
-    """Formato GP: '205/75r16c' (tudo minúsculo, sem espaço antes do r)."""
+    """Formato GP: '205/75r16c' (tudo minúsculo, sem espaço antes do r) — ou
+    'L-R' quando não tem altura (agrícola/caminhão tipo '1000-20'), senão vira
+    '1000/Noner20' literal (bug achado 09/jul/2026)."""
     L = cfg["largura"]
-    A = cfg.get("altura", "")
+    A = cfg.get("altura")
     R = str(cfg["aro"]).lower()
+    if cfg.get("categoria") == "agricola" or not A:
+        return f"{L}-{R}"
     return f"{L}/{A}r{R}"
 
 

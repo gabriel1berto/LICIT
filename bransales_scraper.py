@@ -143,10 +143,15 @@ def login(page):
 def build_url(item: dict) -> str | None:
     cat = item.get("categoria", "passeio")
     L, A, R = item["largura"], item.get("altura"), item["aro"]
-    if cat == "agricola":
-        return f"{BASE}/pneus/Secao-{L},Aro-{R}/"
+    # Sem altura (medida tipo "1000 R20", "1400 R24") — usa padrao Secao,
+    # nao Largura/Altura (senao vira "Altura-None" literal na URL).
+    # Bug achado 09/jul/2026: condicao so olhava categoria, nao a presenca
+    # de altura de verdade — item caminhao/OTR sem altura caia no branch
+    # errado mesmo quando categoria nao era "agricola"/"camara".
     if cat == "camara":
         return f"{BASE}/camaras/Secao-{L},Aro-{R}/"
+    if cat == "agricola" or not A:
+        return f"{BASE}/pneus/Secao-{L},Aro-{R}/"
     return f"{BASE}/pneus/Largura-{L},Altura-{A},Aro-{R}/"
 
 

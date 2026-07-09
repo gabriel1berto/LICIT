@@ -85,8 +85,10 @@ def extract_brand(nome: str) -> str:
 
 
 def build_title(cfg: dict) -> str:
-    """Monta string de busca: ex. '205/60R16' (passeio/caminhão) ou '11.2-24' (agrícola)."""
-    if cfg.get("categoria") == "agricola":
+    """Monta string de busca: ex. '205/60R16' (passeio/caminhão) ou '11.2-24' (agrícola,
+    ou qualquer item sem altura — ex: '1000-20' caminhão diagonal, sem isso vira
+    '1000/NoneR20' literal — bug achado 09/jul/2026)."""
+    if cfg.get("categoria") == "agricola" or not cfg.get("altura"):
         return f"{cfg['largura']}-{cfg['aro']}"
     L = cfg["largura"]
     A = cfg.get("altura", "")
@@ -96,7 +98,7 @@ def build_title(cfg: dict) -> str:
 
 def category_path(cfg: dict) -> str:
     """Segmento de URL da categoria: 'pneus' (padrão) ou 'agricola'."""
-    return "agricola" if cfg.get("categoria") == "agricola" else "pneus"
+    return "agricola" if (cfg.get("categoria") == "agricola" or not cfg.get("altura")) else "pneus"
 
 
 # ── LOGIN ──────────────────────────────────────────────────────────────────────

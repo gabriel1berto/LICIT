@@ -70,8 +70,10 @@ def piso_ok_nome(nome: str, padrao: str) -> bool | None:
 
 
 def build_medida_green(cfg: dict) -> str:
-    """Formato PneuGreen: '205/75 R16C' (passeio/caminhão) ou '11.2-24' (agrícola, sem espaço/R)."""
-    if cfg.get("categoria") == "agricola":
+    """Formato PneuGreen: '205/75 R16C' (passeio/caminhão) ou '11.2-24' (agrícola, sem
+    espaço/R — mesmo formato usado quando não tem altura, tipo '1000-20' caminhão,
+    senão vira '1000/None R20' literal — bug achado 09/jul/2026)."""
+    if cfg.get("categoria") == "agricola" or not cfg.get("altura"):
         return f"{cfg['largura']}-{cfg['aro']}"
     return f"{cfg['largura']}/{cfg['altura']} R{cfg['aro'].upper()}"
 
