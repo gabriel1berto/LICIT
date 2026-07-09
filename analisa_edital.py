@@ -27,11 +27,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-CLAUDE_MODEL   = "claude-sonnet-4-6"
-PNCP_BASE      = "https://pncp.gov.br/api/pncp/v1/orgaos"
-NOTION_BASE    = "https://api.notion.com/v1"
-NOTION_VERSION = "2022-06-28"
-MAX_TEXT_CHARS = 60_000
+CLAUDE_MODEL     = "claude-sonnet-4-6"
+PNCP_BASE        = "https://pncp.gov.br/api/pncp/v1/orgaos"
+# api/pncp/v1 não retorna valorTotalEstimado (sempre None) — só api/consulta/v1 tem esse
+# campo populado. api/consulta/v1, por outro lado, 404 pro endpoint de itens. Por isso
+# usamos os dois: consulta/v1 pro detalhe (valor oficial), pncp/v1 pros itens.
+PNCP_CONSULTA_BASE = "https://pncp.gov.br/api/consulta/v1/orgaos"
+NOTION_BASE      = "https://api.notion.com/v1"
+NOTION_VERSION   = "2022-06-28"
+MAX_TEXT_CHARS   = 60_000
 
 # ─── PNCP ─────────────────────────────────────────────────────────────────────
 
@@ -47,6 +51,13 @@ def parse_pncp(arg: str):
 
 def pncp_get(path: str):
     r = requests.get(f"{PNCP_BASE}/{path}", timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+def pncp_get_consulta(path: str) -> dict:
+    """api/consulta/v1 — tem valorTotalEstimado/objetoCompra (pncp_get não tem,
+    sempre None nesses campos). Não serve pra itens (404 lá)."""
+    r = requests.get(f"{PNCP_CONSULTA_BASE}/{path}", timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -335,6 +346,50 @@ def analisar(texto: str, metadados: dict, itens_api: list) -> dict:
     raw = re.sub(r"\n?```$", "", raw)
     return json.loads(raw)
 
+
+def _parse_valor_brl(s) -> float:
+    if isinstance(s, (int, float)):
+        return float(s)
+    s = str(s).replace("R$", "").strip().replace(".", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _fmt_valor_brl(v: float) -> str:
+    return f"R$ {v:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def validar_valor_total(analise: dict, valor_oficial_pncp: float | None) -> None:
+    """valor_total do Claude é lido do texto livre do documento — já variou entre
+    chamadas pro mesmo edital idêntico (achado real: R$2,6mi vs R$688mil). A soma
+    dos itens tampouco é a verdade final: um edital real (Doutor Ulysses, ARP)
+    tinha só 10 itens somando R$688mil, mas o teto oficial da ata no PNCP
+    (valorTotalEstimado, api/consulta/v1) é R$2,6mi — a ata cobre mais
+    secretarias/materiais do que os itens detalhados nesse documento específico.
+    Não dá pra saber sozinho qual "está certo". Regra: valor oficial do PNCP
+    manda (é dado estruturado, não texto livre) quando disponível; soma dos
+    itens vira só alerta de divergência, nunca sobrescreve nada."""
+    soma_itens = sum(_parse_valor_brl(i.get("valor_total", 0)) for i in analise.get("itens", []))
+    valor_claude = analise.get("cabecalho", {}).get("valor_total", "")
+
+    if valor_oficial_pncp:
+        valor_final = _fmt_valor_brl(valor_oficial_pncp)
+        analise["cabecalho"]["valor_total"] = valor_final
+        if "titulo" in analise:
+            analise["titulo"] = re.sub(r"R\$\s*[\d\.,]+", valor_final, analise["titulo"])
+        if abs(valor_oficial_pncp - soma_itens) > max(1.0, valor_oficial_pncp * 0.02):
+            analise.setdefault("alertas", {}).setdefault("bloqueantes", []).insert(0,
+                f"Valor oficial do PNCP (teto da ata: {valor_final}) diverge da soma dos "
+                f"{len(analise.get('itens', []))} itens detalhados neste documento "
+                f"({_fmt_valor_brl(soma_itens)}) — provável ARP com escopo maior que os itens "
+                f"aqui listados. Confirmar com o órgão antes de assumir que é só isso.")
+    elif valor_claude and abs(_parse_valor_brl(valor_claude) - soma_itens) > max(1.0, soma_itens * 0.02):
+        print(f"  ⚠ valor_total do Claude ({valor_claude}) diverge da soma dos itens "
+              f"({_fmt_valor_brl(soma_itens)}) e não há valor oficial do PNCP pra desempatar — "
+              f"mantendo o do Claude, mas desconfiar.", file=sys.stderr)
+
 # ─── NOTION — HELPERS ─────────────────────────────────────────────────────────
 
 def _notion_headers():
@@ -617,6 +672,11 @@ def main():
 
     metadados = pncp_get(f"{cnpj}/compras/{ano}/{seq_s}")
     itens_api = pncp_get(f"{cnpj}/compras/{ano}/{seq_s}/itens")
+    try:
+        metadados_oficial = pncp_get_consulta(f"{cnpj}/compras/{ano}/{seq_s}")
+    except Exception as e:
+        print(f"  ⚠ Não consegui buscar valor oficial via consulta/v1: {e}", file=sys.stderr)
+        metadados_oficial = {}
 
     # 2. Documentos
     print("📄 Baixando documentos...", file=sys.stderr)
@@ -631,6 +691,7 @@ def main():
     # 3. Claude
     print("🤖 Analisando com Claude...", file=sys.stderr)
     analise = analisar(texto, metadados, itens_api)
+    validar_valor_total(analise, metadados_oficial.get("valorTotalEstimado"))
     print(f"   {len(analise['itens'])} itens · {analise['cabecalho']['valor_total']}", file=sys.stderr)
 
     # 4. Saída
