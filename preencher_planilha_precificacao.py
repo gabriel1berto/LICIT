@@ -5,9 +5,10 @@ precificação com os resultados dos 4 scrapers (Bransales/Cantu/GP/Green).
 
 A planilha modelo (sempre duplicada antes, nunca editada direto — ver
 https://drive.google.com/drive/folders/1Nf10IsY2Gzpf_1WXWuKBC0B58vAbnuXX)
-tem 4 blocos empilhados, um por distribuidor. As colunas L-V (Investimento,
-Frete, Imposto, Preço de venda, Expectativa de pagamento) são FÓRMULA — só
-escrevemos nas colunas de entrada (A-J). Nunca sobrescrever L-V.
+tem 4 blocos empilhados, um por distribuidor. Colunas de entrada: A-K
+(Item/Produto/Modelo/Critérios/Distribuidor/Marca/Link/Observação/Preço UN/
+Preço Leilão/Qtde). Colunas M em diante (Investimento, Frete, Imposto, Preço
+de venda, Expectativa de pagamento) são FÓRMULA — nunca escrever nelas.
 
 Uso:
   python preencher_planilha_precificacao.py <spreadsheet_id> <analise.json> \
@@ -75,7 +76,7 @@ def preencher_bloco(ws, distribuidor: str, itens_edital: list, resultados: list[
 
         if edital_item is None:
             # item não existe nesse edital (bloco tem 12 linhas fixas, edital pode ter menos) — limpa
-            updates.append({"range": f"A{row}:J{row}", "values": [[""] * 10]})
+            updates.append({"range": f"A{row}:K{row}", "values": [[""] * 11]})
             continue
 
         resultado_item = por_item.get(item_num)
@@ -90,6 +91,7 @@ def preencher_bloco(ws, distribuidor: str, itens_edital: list, resultados: list[
 
         valores = [
             item_num,
+            edital_item.get("produto", ""),
             edital_item.get("medida", ""),
             dados["criterio"],
             distribuidor,
@@ -100,7 +102,7 @@ def preencher_bloco(ws, distribuidor: str, itens_edital: list, resultados: list[
             preco_leilao,
             edital_item.get("qtde", ""),
         ]
-        updates.append({"range": f"A{row}:J{row}", "values": [valores]})
+        updates.append({"range": f"A{row}:K{row}", "values": [valores]})
 
     ws.batch_update(updates, value_input_option="USER_ENTERED")
     print(f"  [{distribuidor}] {len(itens_edital)} item(ns) do edital escrito(s)", file=sys.stderr)
