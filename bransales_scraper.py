@@ -23,7 +23,7 @@ PASSWORD = os.environ["BRANSALES_PASSWORD"]
 BASE     = "https://atacado.bransales.com.br"
 MAX_CHECK = 3
 
-IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUVWHY")}
+IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUHVWY")}
 
 
 # ── PARSERS DE LISTAGEM ────────────────────────────────────────────────────────

@@ -32,7 +32,7 @@ LOGIN_EMAIL = os.environ["GREEN_EMAIL"]
 LOGIN_PASS  = os.environ["GREEN_PASSWORD"]
 MAX_CHECK   = 3
 
-IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUVWHY")}
+IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUHVWY")}
 
 
 # ── PARSERS ────────────────────────────────────────────────────────────────────

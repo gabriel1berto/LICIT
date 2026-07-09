@@ -30,7 +30,7 @@ BASE       = "https://www.gpfacil.com.br"
 COOKIES_F  = os.path.join(os.path.dirname(__file__), "gp_cookies.json")
 MAX_CHECK  = 3
 
-IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUVWHY")}
+IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUHVWY")}
 
 
 # ── PARSERS ────────────────────────────────────────────────────────────────────

@@ -30,7 +30,7 @@ PASSWORD  = os.environ["CANTU_PASSWORD"]
 BASE      = "https://empresas.speedmax.com.br"
 MAX_CHECK = 3  # máx de produtos visitados por item
 
-IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUVWHY")}
+IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUHVWY")}
 
 
 # ── PARSERS ────────────────────────────────────────────────────────────────────
