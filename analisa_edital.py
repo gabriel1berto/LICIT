@@ -146,14 +146,18 @@ def _extrair_arquivo(nome: str, content: bytes) -> tuple[bool, str]:
     return _extrair_bruto_best_effort(nome, content)
 
 
-def baixar_documentos(cnpj: str, ano: int, seq: int) -> str:
+def baixar_documentos(cnpj: str, ano: int, seq: int) -> tuple[str, list[tuple[str, bytes]]]:
+    """Retorna (texto_concatenado, arquivos_reais) — arquivos_reais é a lista de
+    (nome, bytes) de todo documento individual baixado (não o zip container),
+    pra poder anexar na página Notion depois (documentos usados na análise)."""
     seq_s = f"{seq:06d}"
     try:
         arquivos = pncp_get(f"{cnpj}/compras/{ano}/{seq_s}/arquivos")
     except Exception as e:
         raise ExtracaoInsuficiente(f"Falha ao listar arquivos do PNCP: {e}")
 
-    resultados = []  # lista de (ok: bool, texto: str) — todo arquivo, sem exceção
+    resultados     = []  # lista de (ok: bool, texto: str)
+    arquivos_reais = []  # lista de (nome, bytes) — pra upload no Notion
     for arq in arquivos:
         titulo = arq.get("titulo") or arq.get("nome") or "documento"
         url    = arq.get("url") or arq.get("uri") or ""
@@ -184,14 +188,18 @@ def baixar_documentos(cnpj: str, ano: int, seq: int) -> str:
             # não como container de outros documentos.
             if titulo.lower().endswith(".docx") and any(n.startswith("word/") for n in nomes_zip):
                 resultados.append(_extrair_docx(titulo, r.content))
+                arquivos_reais.append((titulo, r.content))
                 continue
             for nome in nomes_zip:
                 if nome.endswith("/"):
                     continue
                 print(f"    └ {nome}", file=sys.stderr)
-                resultados.append(_extrair_arquivo(nome, z.read(nome)))
+                conteudo = z.read(nome)
+                resultados.append(_extrair_arquivo(nome, conteudo))
+                arquivos_reais.append((nome, conteudo))
         else:
             resultados.append(_extrair_arquivo(titulo, r.content))
+            arquivos_reais.append((titulo, r.content))
 
     chars_confiaveis = sum(len(t) for ok, t in resultados if ok)
     n_ok             = sum(1 for ok, _ in resultados if ok)
@@ -202,7 +210,7 @@ def baixar_documentos(cnpj: str, ano: int, seq: int) -> str:
             f"Analisar sem base documental real geraria alucinação — processo interrompido de propósito."
         )
 
-    return "\n\n".join(t for _, t in resultados)
+    return "\n\n".join(t for _, t in resultados), arquivos_reais
 
 # ─── PROMPT ───────────────────────────────────────────────────────────────────
 
@@ -356,6 +364,53 @@ def notion_append(page_id: str, children: list):
             print(f"Notion API error {r.status_code}: {r.text}", file=sys.stderr)
         r.raise_for_status()
 
+
+CAPTION_DOC_ANALISE = "📎 Documento da análise: "
+
+CONTENT_TYPE_POR_EXT = {
+    ".pdf":  "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".txt":  "text/plain",
+    ".csv":  "text/csv",
+    ".html": "text/html",
+    ".htm":  "text/html",
+}
+
+
+def notion_upload_file(nome: str, content: bytes) -> str | None:
+    """Faz upload de 1 arquivo pro Notion (File Upload API) e retorna o file_upload id.
+    Retorna None em caso de falha — anexo é complementar, não deve derrubar a análise."""
+    try:
+        r = requests.post(f"{NOTION_BASE}/file_uploads",
+                          headers=_notion_headers(), json={}, timeout=30)
+        r.raise_for_status()
+        upload_id  = r.json()["id"]
+        upload_url = r.json()["upload_url"]
+
+        ext = "." + nome.lower().rsplit(".", 1)[-1] if "." in nome else ""
+        content_type = CONTENT_TYPE_POR_EXT.get(ext, "application/octet-stream")
+
+        headers_upload = {k: v for k, v in _notion_headers().items() if k != "Content-Type"}
+        r2 = requests.post(upload_url, headers=headers_upload,
+                           files={"file": (nome, content, content_type)}, timeout=120)
+        r2.raise_for_status()
+        return upload_id
+    except Exception as e:
+        print(f"    ⚠ falha ao anexar '{nome}' no Notion: {e}", file=sys.stderr)
+        return None
+
+
+def b_file(file_upload_id: str, nome: str):
+    return {
+        "object": "block",
+        "type": "file",
+        "file": {
+            "type": "file_upload",
+            "file_upload": {"id": file_upload_id},
+            "caption": [{"type": "text", "text": {"content": f"{CAPTION_DOC_ANALISE}{nome}"}}],
+        },
+    }
+
 def notion_update_props(page_id: str, titulo: str, data_iso: str):
     props = {
         "Nome do Processo": {"title": [{"text": {"content": titulo}}]}
@@ -365,6 +420,8 @@ def notion_update_props(page_id: str, titulo: str, data_iso: str):
     r = requests.patch(f"{NOTION_BASE}/pages/{page_id}",
                        headers=_notion_headers(),
                        json={"properties": props}, timeout=30)
+    if not r.ok:
+        print(f"Notion API error {r.status_code}: {r.text}", file=sys.stderr)
     r.raise_for_status()
 
 # ─── NOTION — BUILDERS DE BLOCO ───────────────────────────────────────────────
@@ -556,7 +613,7 @@ def main():
     # 2. Documentos
     print("📄 Baixando documentos...", file=sys.stderr)
     try:
-        texto = baixar_documentos(cnpj, ano, seq)
+        texto, arquivos_reais = baixar_documentos(cnpj, ano, seq)
     except ExtracaoInsuficiente as e:
         print(f"\n❌ ERRO — processo interrompido: {e}", file=sys.stderr)
         print("   Nenhuma chamada ao Claude foi feita. Nenhuma escrita no Notion foi feita.", file=sys.stderr)
@@ -577,14 +634,35 @@ def main():
     print("✏️  Atualizando Notion...", file=sys.stderr)
     notion_update_props(notion_id, analise["titulo"], analise.get("data_sessao_iso", ""))
 
+    def eh_anexo_de_analise_anterior(bloco: dict) -> bool:
+        if bloco["type"] != "file":
+            return False
+        captions = bloco.get("file", {}).get("caption", [])
+        return any(c.get("plain_text", "").startswith(CAPTION_DOC_ANALISE) for c in captions)
+
     children = notion_get_children(notion_id)
     for bloco in children:
-        if bloco["type"] not in ("file", "pdf", "image"):
-            notion_delete(bloco["id"])
+        # mantém anexo manual (file/pdf/image que o usuário colocou), remove
+        # só o que sobrou de uma rodada anterior desse script (evita duplicar
+        # a cada re-análise) e todo bloco de texto/tabela gerado por ele.
+        if bloco["type"] in ("pdf", "image"):
+            continue
+        if bloco["type"] == "file" and not eh_anexo_de_analise_anterior(bloco):
+            continue
+        notion_delete(bloco["id"])
 
-    novos = build_blocks(analise)
+    print(f"   📎 anexando {len(arquivos_reais)} documento(s) usado(s) na análise...", file=sys.stderr)
+    doc_blocks = []
+    for nome, conteudo in arquivos_reais:
+        upload_id = notion_upload_file(nome, conteudo)
+        if upload_id:
+            doc_blocks.append(b_file(upload_id, nome))
+    if doc_blocks:
+        doc_blocks = [b_divider(), b_h2("📎 DOCUMENTOS USADOS NA ANÁLISE")] + doc_blocks
+
+    novos = build_blocks(analise) + doc_blocks
     notion_append(notion_id, novos)
-    print(f"   {len(novos)} blocos inseridos", file=sys.stderr)
+    print(f"   {len(novos)} blocos inseridos ({len(doc_blocks)} de anexo)", file=sys.stderr)
 
     print(f"\n✅ https://app.notion.com/p/{notion_id}", file=sys.stderr)
 
