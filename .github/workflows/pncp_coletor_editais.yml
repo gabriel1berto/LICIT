@@ -1,11 +1,17 @@
-name: PNCP Coletor — Editais (fase 1, manual)
+name: PNCP Coletor — Editais (fase 1)
 
 on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC (~00h BRT) — reescaneia as 27 UFs pra achar edital novo
   workflow_dispatch:
     inputs:
       uf:
         description: 'UF única (ex: SP) — vazio roda todas as 27'
         required: false
+      reset:
+        description: 'Reescanear do zero (achar edital novo) em vez de retomar de onde parou'
+        type: boolean
+        default: false
 
 jobs:
   coleta_editais:
@@ -29,8 +35,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         working-directory: analise
         run: |
+          ARGS=""
           if [ -n "${{ github.event.inputs.uf }}" ]; then
-            python coletor_pncp.py --uf "${{ github.event.inputs.uf }}"
-          else
-            python coletor_pncp.py
+            ARGS="$ARGS --uf ${{ github.event.inputs.uf }}"
           fi
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.reset }}" = "true" ]; then
+            ARGS="$ARGS --reset"
+          fi
+          python coletor_pncp.py $ARGS

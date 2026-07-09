@@ -14,13 +14,16 @@ Requer (variáveis de ambiente):
   NOTION_TOKEN       — token de integração Notion (Settings → Connections → Develop)
 
 Dependências:
-  pip install requests pdfplumber anthropic
+  pip install requests pdfplumber anthropic python-dotenv
 """
 
 import io, json, os, re, sys, zipfile
 import requests
 import pdfplumber
 import anthropic
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 CLAUDE_MODEL   = "claude-sonnet-4-6"
@@ -127,6 +130,8 @@ Nunca retorne "conforme TR", "conforme edital" ou null — se não encontrar, pr
 Deixe vazio se não houver informação adicional relevante.
 - Câmara: "Com" se o item incluir câmara de ar, "Sem" caso contrário. Atenção a itens que listam câmara junto ao pneu.
 - catmat: código numérico do CATMAT/SIASG se presente no documento. Se não encontrar, use "".
+- habilitacao: máximo 80 chars por campo. Use abreviações: RFB+PGFN, FGTS, CNDT, Est.+Mun., doc. adm., CC/CCMEI. \
+Se não houver exigência, escreva "Sem exigência". Não use frases completas.
 """
 
 PROMPT_ESTRUTURA = """\

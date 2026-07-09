@@ -97,7 +97,7 @@ def inject_and_check(ctx, page) -> bool:
     """Injeta cookies e verifica se sessão é válida."""
     cookies = load_cookies()
     ctx.add_cookies(cookies)
-    page.goto(BASE, wait_until="domcontentloaded", timeout=15_000)
+    page.goto(BASE, wait_until="domcontentloaded", timeout=30_000)
     content = page.content().lower()
     return "sair" in content or "minha conta" in content or "logout" in content
 

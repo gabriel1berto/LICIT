@@ -186,6 +186,19 @@ def salvar_progresso_fila(con: psycopg2.extensions.connection, cur: psycopg2.ext
     con.commit()
 
 
+def resetar_fila(con: psycopg2.extensions.connection, cur: psycopg2.extensions.cursor,
+                  ufs_alvo: list[str]) -> None:
+    """Reabre a fila das UFs alvo pra reescanear do zero — usado em reruns
+    agendados, já que a API não permite paginar só o que é novo (ver docstring
+    do módulo: resultado não vem ordenado por data)."""
+    cur.execute(
+        "UPDATE filas SET proxima_pagina=1, concluida=FALSE, atualizado_em=%s WHERE uf = ANY(%s)",
+        (datetime.now(timezone.utc).isoformat(), ufs_alvo),
+    )
+    con.commit()
+    log.info(f"Fila resetada pra {len(ufs_alvo)} UF(s) — próximo run reescaneia do zero.")
+
+
 # ── Guarda de disco ───────────────────────────────────────────────────────
 
 def espaco_livre_mb() -> float:
@@ -230,13 +243,16 @@ def buscar_pagina(uf: str, pagina: int) -> dict:
 
 # ── Loop principal ────────────────────────────────────────────────────────
 
-def coletar(ufs_alvo: list[str]) -> None:
+def coletar(ufs_alvo: list[str], reset: bool = False) -> None:
     con, cur = conectar_db()
     log.info(
         f"Iniciando coleta — {len(ufs_alvo)} UFs, termo='{TERMO_BUSCA}', "
         f"todas modalidades, período alvo {PERIODO_INICIO} a {PERIODO_FIM} "
         f"(aplicado no cliente — API não filtra data)."
     )
+
+    if reset:
+        resetar_fila(con, cur, ufs_alvo)
 
     for uf in ufs_alvo:
         aguardar_espaco_em_disco()
@@ -317,10 +333,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--status", action="store_true", help="só mostra progresso, não coleta")
     parser.add_argument("--uf", type=str, default=None, help="roda só uma UF (teste/depuração)")
+    parser.add_argument("--reset", action="store_true",
+                         help="reabre a fila das UFs alvo antes de coletar (reescaneia do zero — "
+                              "necessário pra achar edital novo, já que a API não pagina por data)")
     args = parser.parse_args()
 
     if args.status:
         mostrar_status()
     else:
         alvo = [args.uf.upper()] if args.uf else TODAS_UFS
-        coletar(alvo)
+        coletar(alvo, reset=args.reset)
