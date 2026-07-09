@@ -80,21 +80,6 @@ def _extrair_medida(descricao: str) -> str | None:
     return medidas.pop()
 
 
-def carregar_concorrencia() -> pd.DataFrame:
-    """1 linha por (processo, item, fornecedor ofertante) — TODOS os ofertantes, não só o
-    vencedor. Base pra concorrência em 3 granularidades: edital, item, produto/medida.
-    """
-    return pd.read_sql_query(
-        """
-        SELECT r.numero_controle_pncp, r.numero_item, r.ni_fornecedor
-        FROM resultados r
-        JOIN itens i ON i.numero_controle_pncp = r.numero_controle_pncp AND i.numero_item = r.numero_item
-        WHERE i.eh_pneu = TRUE
-        """,
-        ENGINE,
-    )
-
-
 def cobertura_por_uf() -> pd.DataFrame:
     """Cobertura de coleta (fase 2) por UF — feito/total/pct, pra normalizar leitura de
     volume geográfico (UF com mais % coletado aparece maior sem ser maior de verdade)."""
@@ -259,6 +244,17 @@ def carregar_base_pncp() -> pd.DataFrame:
     df.loc[resultado_suspeito, ["nome_fornecedor", "valor_unitario_resultado", "valor_total_resultado", "cod_fornecedor"]] = pd.NA
     df.loc[resultado_suspeito, "tem_resultado"] = False
 
+    # achado 08/jul/26 auditando direção reversa (resultado << estimado): maioria dos
+    # casos abaixo de R$10 é plausível (câmara de ar genuinamente é barata, R$10-40), mas
+    # achado real de erro: "PNEU 60/100-17 DIANTEIRO DE HONDA BIZ" resultado=R$3,50 (pneu
+    # de moto não existe a esse preço), "Pneu veículo automotivo" resultado=R$0,71/R$1,00
+    # (placeholder de dado ruim, não preço real). Nenhum pneu ou câmara de ar genuína no
+    # Brasil custa menos de R$5 — piso de sanidade abaixo do menor caso plausível
+    # (carrinho de mão ~R$7) pra nunca cortar item real.
+    resultado_baixo_demais = df["valor_unitario_resultado"].notna() & (df["valor_unitario_resultado"] < 5)
+    df.loc[resultado_baixo_demais, ["nome_fornecedor", "valor_unitario_resultado", "valor_total_resultado", "cod_fornecedor"]] = pd.NA
+    df.loc[resultado_baixo_demais, "tem_resultado"] = False
+
     df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")
     df["data_abertura_proposta"] = pd.to_datetime(df["data_abertura_proposta"], errors="coerce", utc=True)
     df["ano_mes"] = df["data_abertura_proposta"].dt.strftime("%Y-%m")
@@ -294,6 +290,7 @@ def carregar_fornecedores_resultado() -> pd.DataFrame:
           AND (d.valor_total_estimado IS NULL OR d.valor_total_estimado <= 300000000)
           AND (i.valor_unitario_estimado IS NULL OR i.valor_unitario_estimado <= 1
                OR r.valor_unitario_homologado <= 5 * i.valor_unitario_estimado)
+          AND r.valor_unitario_homologado >= 5
         """,
         ENGINE,
     )

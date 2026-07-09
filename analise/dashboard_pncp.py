@@ -667,7 +667,11 @@ def main() -> None:
                         .head(15)
             )
             total_ganho = vencidos["valor_total_resultado"].sum()
-            conc["participacao_pct"] = (conc["valor_ganho"] / total_ganho * 100).round().astype("int64")
+            # achado 08/jul/26: "Top 5 concentram X%" somava participacao_pct já
+            # arredondado CÉLULA a célula — acumula erro de arredondamento (~0,25pp medido).
+            # top5_pct_bruto guarda a fração exata pra somar antes de arredondar 1x só.
+            conc["participacao_pct_bruto"] = conc["valor_ganho"] / total_ganho * 100
+            conc["participacao_pct"] = conc["participacao_pct_bruto"].round().astype("int64")
             conc["valor_ganho"] = conc["valor_ganho"].round().astype("int64")
 
             conc_label = conc.sort_values("valor_ganho").copy()
@@ -683,7 +687,7 @@ def main() -> None:
                 figf.update_layout(showlegend=False)
                 fundo_transparente(figf)
                 st.plotly_chart(figf, use_container_width=True)
-                top5_pct = conc.head(5)["participacao_pct"].sum()
+                top5_pct = conc.head(5)["participacao_pct_bruto"].sum()
                 st.caption(f"Top 5 fornecedores concentram {top5_pct:.0f}% do valor ganho nos filtros atuais.")
 
             with col_conc_tab:
