@@ -14,12 +14,13 @@ Requer (variáveis de ambiente):
   NOTION_TOKEN       — token de integração Notion (Settings → Connections → Develop)
 
 Dependências:
-  pip install requests pdfplumber anthropic python-dotenv
+  pip install requests pdfplumber anthropic python-dotenv python-docx
 """
 
 import io, json, os, re, sys, zipfile
 import requests
 import pdfplumber
+import docx as docx_lib
 import anthropic
 from dotenv import load_dotenv
 
@@ -49,7 +50,16 @@ def pncp_get(path: str):
     r.raise_for_status()
     return r.json()
 
-def _extrair_pdf(nome: str, content: bytes) -> str:
+class ExtracaoInsuficiente(RuntimeError):
+    """Levantado quando os documentos não puderam ser lidos com confiança —
+    processo deve parar aqui, nunca seguir pro Claude sem base documental real
+    (Claude sem grounding inventa habilitação/prazo/critérios)."""
+
+
+LIMIAR_CHARS_CONFIAVEIS = 500  # abaixo disso, não confia o suficiente pra analisar
+
+
+def _extrair_pdf(nome: str, content: bytes) -> tuple[bool, str]:
     try:
         with pdfplumber.open(io.BytesIO(content)) as pdf:
             # RelacaoItens: prioriza extract_tables para preservar medidas da tabela
@@ -64,16 +74,76 @@ def _extrair_pdf(nome: str, content: bytes) -> str:
                     t = pg.extract_text()
                     if t:
                         linhas.append(t)
-                return f"=== {nome} ===\n" + "\n".join(linhas)
-            # Demais documentos: texto corrido
-            texto = []
-            for pg in pdf.pages:
-                t = pg.extract_text()
-                if t:
-                    texto.append(t)
+                texto = "\n".join(linhas)
+            else:
+                # Demais documentos: texto corrido
+                texto = "\n".join(t for pg in pdf.pages if (t := pg.extract_text()))
     except Exception as e:
-        return f"=== {nome} — erro na extração: {e} ==="
-    return f"=== {nome} ===\n" + "\n".join(texto)
+        return False, f"=== {nome} — erro na extração: {e} ==="
+    ok = len(texto.strip()) > 20
+    return ok, f"=== {nome} ===\n" + texto
+
+
+def _extrair_docx(nome: str, content: bytes) -> tuple[bool, str]:
+    try:
+        d = docx_lib.Document(io.BytesIO(content))
+        linhas = [p.text for p in d.paragraphs if p.text.strip()]
+        for tbl in d.tables:
+            for row in tbl.rows:
+                celulas = [c.text.strip() for c in row.cells]
+                if any(celulas):
+                    linhas.append(" | ".join(celulas))
+    except Exception as e:
+        return False, f"=== {nome} — erro na extração: {e} ==="
+    texto = "\n".join(linhas)
+    return len(texto.strip()) > 20, f"=== {nome} ===\n" + texto
+
+
+def _extrair_texto_puro(nome: str, content: bytes) -> tuple[bool, str]:
+    for enc in ("utf-8", "latin-1"):
+        try:
+            texto = content.decode(enc)
+            return len(texto.strip()) > 20, f"=== {nome} ===\n" + texto
+        except UnicodeDecodeError:
+            continue
+    return False, f"=== {nome} — não foi possível decodificar como texto ==="
+
+
+def _extrair_html(nome: str, content: bytes) -> tuple[bool, str]:
+    ok, texto = _extrair_texto_puro(nome, content)
+    return ok, re.sub(r"<[^>]+>", " ", texto)
+
+
+def _extrair_bruto_best_effort(nome: str, content: bytes) -> tuple[bool, str]:
+    """Fallback pra formato binário sem parser dedicado (.doc antigo, .rtf, etc.) —
+    varre bytes decodificáveis e mantém só sequências imprimíveis de 4+ chars.
+    SEMPRE conta como não-confiável (ok=False) — qualidade não garantida, nunca
+    deve sozinho justificar seguir pra análise (ver ExtracaoInsuficiente)."""
+    bruto = content.decode("latin-1", errors="ignore")
+    pedacos = re.findall(r"[ -~À-ÿ]{4,}", bruto)
+    texto = "\n".join(pedacos)
+    return False, f"=== {nome} — extração best-effort (formato binário sem parser), conferir original ===\n" + texto
+
+
+EXTRATORES = {
+    ".pdf":  _extrair_pdf,
+    ".docx": _extrair_docx,
+    ".txt":  _extrair_texto_puro,
+    ".csv":  _extrair_texto_puro,
+    ".html": _extrair_html,
+    ".htm":  _extrair_html,
+}
+
+
+def _extrair_arquivo(nome: str, content: bytes) -> tuple[bool, str]:
+    ext = "." + nome.lower().rsplit(".", 1)[-1] if "." in nome else ""
+    extrator = EXTRATORES.get(ext)
+    if extrator:
+        return extrator(nome, content)
+    if b"%PDF" in content[:8]:
+        return _extrair_pdf(nome, content)
+    print(f"    ⚠ sem parser dedicado pra '{ext or '(sem extensão)'}' — usando extração best-effort", file=sys.stderr)
+    return _extrair_bruto_best_effort(nome, content)
 
 
 def baixar_documentos(cnpj: str, ano: int, seq: int) -> str:
@@ -81,10 +151,9 @@ def baixar_documentos(cnpj: str, ano: int, seq: int) -> str:
     try:
         arquivos = pncp_get(f"{cnpj}/compras/{ano}/{seq_s}/arquivos")
     except Exception as e:
-        print(f"  ⚠ Falha ao listar arquivos: {e}", file=sys.stderr)
-        return ""
+        raise ExtracaoInsuficiente(f"Falha ao listar arquivos do PNCP: {e}")
 
-    textos = []
+    resultados = []  # lista de (ok: bool, texto: str) — todo arquivo, sem exceção
     for arq in arquivos:
         titulo = arq.get("titulo") or arq.get("nome") or "documento"
         url    = arq.get("url") or arq.get("uri") or ""
@@ -95,26 +164,45 @@ def baixar_documentos(cnpj: str, ano: int, seq: int) -> str:
             r = requests.get(url, timeout=60)
         except Exception as e:
             print(f"    erro: {e}", file=sys.stderr)
+            resultados.append((False, f"=== {titulo} — falha de download: {e} ==="))
             continue
         if r.status_code != 200:
+            resultados.append((False, f"=== {titulo} — HTTP {r.status_code} ==="))
             continue
-        magic = r.content[:8]
-        if b"%PDF" in magic:
-            textos.append(_extrair_pdf(titulo, r.content))
-        elif magic[:4] == b"PK\x03\x04":
-            # ZIP — pode conter múltiplos PDFs (padrão PNCP)
+        if r.content[:4] == b"PK\x03\x04":
+            # ZIP (ou .docx, que também é um zip por dentro) — abre e lê TODO
+            # arquivo de dentro, independente do formato (PNCP mistura pdf/docx/etc).
             try:
                 z = zipfile.ZipFile(io.BytesIO(r.content))
-                for nome in z.namelist():
-                    if nome.lower().endswith(".pdf"):
-                        print(f"    └ {nome}", file=sys.stderr)
-                        textos.append(_extrair_pdf(nome, z.read(nome)))
+                nomes_zip = z.namelist()
             except zipfile.BadZipFile:
                 print(f"    ZIP inválido: {titulo}", file=sys.stderr)
+                resultados.append((False, f"=== {titulo} — ZIP inválido/corrompido ==="))
+                continue
+            # .docx é ele mesmo um zip (word/document.xml etc.) — se o titulo já
+            # aponta pra um .docx, trata o download inteiro como esse arquivo,
+            # não como container de outros documentos.
+            if titulo.lower().endswith(".docx") and any(n.startswith("word/") for n in nomes_zip):
+                resultados.append(_extrair_docx(titulo, r.content))
+                continue
+            for nome in nomes_zip:
+                if nome.endswith("/"):
+                    continue
+                print(f"    └ {nome}", file=sys.stderr)
+                resultados.append(_extrair_arquivo(nome, z.read(nome)))
         else:
-            print(f"    formato não suportado: {magic[:4]}", file=sys.stderr)
+            resultados.append(_extrair_arquivo(titulo, r.content))
 
-    return "\n\n".join(textos)
+    chars_confiaveis = sum(len(t) for ok, t in resultados if ok)
+    n_ok             = sum(1 for ok, _ in resultados if ok)
+    if n_ok == 0 or chars_confiaveis < LIMIAR_CHARS_CONFIAVEIS:
+        raise ExtracaoInsuficiente(
+            f"Extração insuficiente pra confiar: {n_ok} documento(s) lido(s) com sucesso, "
+            f"{chars_confiaveis} chars confiáveis (mínimo {LIMIAR_CHARS_CONFIAVEIS}). "
+            f"Analisar sem base documental real geraria alucinação — processo interrompido de propósito."
+        )
+
+    return "\n\n".join(t for _, t in resultados)
 
 # ─── PROMPT ───────────────────────────────────────────────────────────────────
 
@@ -264,6 +352,8 @@ def notion_append(page_id: str, children: list):
             json={"children": children[i:i + 100]},
             timeout=30,
         )
+        if not r.ok:
+            print(f"Notion API error {r.status_code}: {r.text}", file=sys.stderr)
         r.raise_for_status()
 
 def notion_update_props(page_id: str, titulo: str, data_iso: str):
@@ -322,8 +412,8 @@ def b_table(headers: list, rows: list):
             "table_width": len(headers),
             "has_column_header": True,
             "has_row_header": False,
+            "children": [row(headers)] + [row(r) for r in rows],
         },
-        "children": [row(headers)] + [row(r) for r in rows],
     }
 
 # ─── BUILDER DO CARD ──────────────────────────────────────────────────────────
@@ -465,7 +555,12 @@ def main():
 
     # 2. Documentos
     print("📄 Baixando documentos...", file=sys.stderr)
-    texto = baixar_documentos(cnpj, ano, seq)
+    try:
+        texto = baixar_documentos(cnpj, ano, seq)
+    except ExtracaoInsuficiente as e:
+        print(f"\n❌ ERRO — processo interrompido: {e}", file=sys.stderr)
+        print("   Nenhuma chamada ao Claude foi feita. Nenhuma escrita no Notion foi feita.", file=sys.stderr)
+        sys.exit(2)
     print(f"   {len(texto):,} chars extraídos de {pncp_arg}", file=sys.stderr)
 
     # 3. Claude
