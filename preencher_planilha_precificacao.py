@@ -16,6 +16,12 @@ concatenados) lido direto do resultado do scraper — plano futuro (não
 implementado ainda) é isso virar registro numa base Supabase em vez de
 string solta na planilha.
 
+Coluna U (Vencedor) e W/X/Y (Margem ruim/boa/líquida) são fórmula, iguais
+nos 4 blocos (uniformizado 09/jul/2026) — não escreve nelas, só lê. U
+compara Preço UN do mesmo item nos 4 blocos e marca "🏆 Vencedor" no mais
+barato. Esse script grava um timestamp "Última cotação" na linha do nome
+do distribuidor toda vez que roda.
+
 Uso:
   python preencher_planilha_precificacao.py <spreadsheet_id> <analise.json> \
       --bransales results_X_bransales.json --cantu results_X_cantu.json \
@@ -25,9 +31,11 @@ Setup: ver credentials.json/token.json (mesmo OAuth do precificacao_gsheets.py).
 """
 
 import argparse, json, os, sys
+from datetime import datetime, timezone, timedelta
 import gspread
 
 SHEET_NAME = "Página1"
+BRT = timezone(timedelta(hours=-3))
 
 CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), "credentials.json")
 TOKEN_FILE       = os.path.join(os.path.dirname(__file__), "token.json")
@@ -128,6 +136,10 @@ def preencher_bloco(ws, distribuidor: str, itens_edital: list, resultados: list[
             edital_item.get("qtde", ""),
         ]
         updates.append({"range": f"A{row}:L{row}", "values": [valores]})
+
+    label_row = row1 - 2
+    agora = datetime.now(BRT).strftime("%d/%m/%Y %H:%M")
+    updates.append({"range": f"C{label_row}", "values": [[f"Última cotação: {agora}"]]})
 
     ws.batch_update(updates, value_input_option="USER_ENTERED")
     print(f"  [{distribuidor}] {len(itens_edital)} item(ns) do edital escrito(s)", file=sys.stderr)
