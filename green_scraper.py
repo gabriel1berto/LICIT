@@ -76,6 +76,30 @@ def build_medida_green(cfg: dict) -> str:
     return f"{cfg['largura']}/{cfg['altura']} R{cfg['aro'].upper()}"
 
 
+def _num_pattern(valor) -> str:
+    """Regex pro número tolerando ',' ou '.' como separador decimal."""
+    return re.escape(str(valor)).replace(r"\.", "[.,]")
+
+
+def medida_bate(nome: str, cfg: dict) -> bool:
+    """Confirma que o produto achado tem a MEDIDA pedida no nome, não só o tipo.
+    Bug achado 09/jul/2026: scrape_listing() aceitava qualquer coisa que a busca
+    do site devolvesse, mesmo quando a busca do PneuGreen caía num "relacionado"
+    genérico sem bater a medida de verdade (ex: buscou 6.00-9 e 7.00-12,
+    devolveu o MESMO produto errado 6.00-16 pros dois)."""
+    largura = str(cfg.get("largura") or "").strip()
+    aro     = str(cfg.get("aro") or "").strip()
+    if not largura or not aro:
+        return True  # sem dado suficiente pra validar — não bloqueia, outros filtros decidem
+    aro_re = re.escape(aro)
+    altura = cfg.get("altura")
+    if altura:
+        pattern = rf"{_num_pattern(largura)}\s*[/xX]\s*{_num_pattern(altura)}\D{{0,3}}{aro_re}\b"
+    else:
+        pattern = rf"{_num_pattern(largura)}\s*[-xXrR/]\s*{aro_re}\b"
+    return re.search(pattern, nome, re.I) is not None
+
+
 # ── LOGIN ──────────────────────────────────────────────────────────────────────
 
 def login(page) -> bool:
@@ -230,6 +254,12 @@ def process_item(page, cfg: dict) -> list[dict]:
         motivo = "câmara/roda"
     if len(candidates) < antes:
         print(f"  [filtro tipo] {antes - len(candidates)} produto(s) {motivo} descartado(s)", file=sys.stderr)
+
+    antes = len(candidates)
+    candidates = [c for c in candidates if medida_bate(c["nome"], cfg)]
+    if len(candidates) < antes:
+        print(f"  [filtro medida] {antes - len(candidates)} produto(s) com medida diferente da pedida descartado(s)",
+              file=sys.stderr)
 
     if not candidates:
         return [{
