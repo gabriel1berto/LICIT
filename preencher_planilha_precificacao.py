@@ -5,10 +5,16 @@ precificação com os resultados dos 4 scrapers (Bransales/Cantu/GP/Green).
 
 A planilha modelo (sempre duplicada antes, nunca editada direto — ver
 https://drive.google.com/drive/folders/1Nf10IsY2Gzpf_1WXWuKBC0B58vAbnuXX)
-tem 4 blocos empilhados, um por distribuidor. Colunas de entrada: A-K
-(Item/Produto/Modelo/Critérios/Distribuidor/Marca/Link/Observação/Preço UN/
-Preço Leilão/Qtde). Colunas M em diante (Investimento, Frete, Imposto, Preço
-de venda, Expectativa de pagamento) são FÓRMULA — nunca escrever nelas.
+tem 4 blocos empilhados, um por distribuidor. Colunas de entrada: A-L
+(Item/Produto/Modelo/Especificação Técnica/Critérios/Distribuidor/Marca/
+Link/Observação/Preço UN/Preço Leilão/Qtde). Colunas N em diante
+(Investimento, Frete, Imposto, Preço de venda, Expectativa de pagamento)
+são FÓRMULA — nunca escrever nelas.
+
+Especificação Técnica hoje é texto (IC/IV/Treadwear/Construção/INMETRO
+concatenados) lido direto do resultado do scraper — plano futuro (não
+implementado ainda) é isso virar registro numa base Supabase em vez de
+string solta na planilha.
 
 Uso:
   python preencher_planilha_precificacao.py <spreadsheet_id> <analise.json> \
@@ -41,14 +47,31 @@ def carregar_json(path: str):
         return json.load(f)
 
 
+def formatar_especificacao(resultado_item: dict) -> str:
+    """Concatena as specs técnicas que o scraper conseguiu ler. N/D pra ausente
+    — nunca inventar valor que o scraper não confirmou."""
+    def v(campo, label):
+        val = resultado_item.get(campo)
+        return f"{label} {val}" if val not in (None, "") else f"{label} N/D"
+
+    return " · ".join([
+        v("ic", "IC"),
+        v("iv", "IV"),
+        v("treadwear", "Treadwear"),
+        v("construcao", "Construção"),
+        v("inmetro", "INMETRO"),
+    ])
+
+
 def linha_para_item(resultado_item: dict | None, distribuidor: str) -> dict:
-    """Monta os valores de A-J pra 1 item, dado o resultado do scraper (ou None se sem estoque).
+    """Monta os valores de A-L pra 1 item, dado o resultado do scraper (ou None se sem estoque).
     'Produto' = medida pedida no edital (vem de fora). 'Marca' = nome do produto achado
     (segue o padrao da planilha original: essa coluna guarda o nome completo, tipo
     'Bransales B Van', nao so a marca pura)."""
     if resultado_item is None or not resultado_item.get("apto"):
         obs_sem_estoque = (resultado_item or {}).get("obs") or f"Nenhum produto disponível na {distribuidor}"
         return {
+            "especificacao": "",
             "criterio": "— Sem estoque",
             "marca": "",
             "link": "",
@@ -56,6 +79,7 @@ def linha_para_item(resultado_item: dict | None, distribuidor: str) -> dict:
             "preco_un": "",
         }
     return {
+        "especificacao": formatar_especificacao(resultado_item),
         "criterio": "⚠️ Parcial",
         "marca": resultado_item.get("nome", ""),
         "link": resultado_item.get("url", ""),
@@ -76,7 +100,7 @@ def preencher_bloco(ws, distribuidor: str, itens_edital: list, resultados: list[
 
         if edital_item is None:
             # item não existe nesse edital (bloco tem 12 linhas fixas, edital pode ter menos) — limpa
-            updates.append({"range": f"A{row}:K{row}", "values": [[""] * 11]})
+            updates.append({"range": f"A{row}:L{row}", "values": [[""] * 12]})
             continue
 
         resultado_item = por_item.get(item_num)
@@ -93,6 +117,7 @@ def preencher_bloco(ws, distribuidor: str, itens_edital: list, resultados: list[
             item_num,
             edital_item.get("produto", ""),
             edital_item.get("medida", ""),
+            dados["especificacao"],
             dados["criterio"],
             distribuidor,
             dados["marca"],
@@ -102,7 +127,7 @@ def preencher_bloco(ws, distribuidor: str, itens_edital: list, resultados: list[
             preco_leilao,
             edital_item.get("qtde", ""),
         ]
-        updates.append({"range": f"A{row}:K{row}", "values": [valores]})
+        updates.append({"range": f"A{row}:L{row}", "values": [valores]})
 
     ws.batch_update(updates, value_input_option="USER_ENTERED")
     print(f"  [{distribuidor}] {len(itens_edital)} item(ns) do edital escrito(s)", file=sys.stderr)
