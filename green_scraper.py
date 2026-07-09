@@ -217,13 +217,19 @@ def process_item(page, cfg: dict) -> list[dict]:
     candidates = scrape_listing(page, medida)
     print(f"[item {item_n:02}] {len(candidates)} produto(s) em estoque", file=sys.stderr)
 
-    # Busca por medida mistura tipos de produto (câmara, roda) — filtra pelo tipo esperado
+    # Busca por medida mistura tipos de produto (pneu, câmara, roda) — filtra pelo tipo esperado.
+    # Bug achado 09/jul/2026: condição estava invertida — só filtrava quando NÃO era câmara,
+    # ou seja, buscando câmara de verdade aceitava qualquer coisa (pneu de estrada incluso).
     categoria = cfg.get("categoria", "")
-    if categoria != "camara":
-        antes = len(candidates)
+    antes = len(candidates)
+    if categoria == "camara":
+        candidates = [c for c in candidates if re.search(r"c[âa]mara", c["nome"], re.I)]
+        motivo = "não são câmara"
+    else:
         candidates = [c for c in candidates if not re.search(r"c[âa]mara|\broda\b", c["nome"], re.I)]
-        if len(candidates) < antes:
-            print(f"  [filtro tipo] {antes - len(candidates)} câmara/roda descartada(s)", file=sys.stderr)
+        motivo = "câmara/roda"
+    if len(candidates) < antes:
+        print(f"  [filtro tipo] {antes - len(candidates)} produto(s) {motivo} descartado(s)", file=sys.stderr)
 
     if not candidates:
         return [{

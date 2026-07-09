@@ -225,6 +225,10 @@ Nunca retorne "conforme TR", "conforme edital" ou null — se não encontrar, pr
 - obs do item: use apenas para especificações relevantes (ex: "Nylon, 8 lonas", "AT 50%", "com câmara"). \
 Deixe vazio se não houver informação adicional relevante.
 - Câmara: "Com" se o item incluir câmara de ar, "Sem" caso contrário. Atenção a itens que listam câmara junto ao pneu.
+- produto: classifica o TIPO do item, sempre um destes valores exatos — "Pneu", "Câmara de ar", "Protetor", "Roda", "Outro". \
+Câmara de ar avulsa (não vem junto de pneu no mesmo item) é "Câmara de ar", não "Pneu". Roda/aro/disco de liga leve é "Roda". \
+Ferramenta (chave de roda, macaco) ou qualquer item que não seja pneu/câmara/protetor/roda é "Outro". \
+Esse campo decide em qual fornecedor/categoria a cotação vai buscar depois — nunca adivinhar, usar só o que o documento descreve.
 - catmat: código numérico do CATMAT/SIASG se presente no documento. Se não encontrar, use "".
 - habilitacao: máximo 80 chars por campo. Use abreviações: RFB+PGFN, FGTS, CNDT, Est.+Mun., doc. adm., CC/CCMEI. \
 Se não houver exigência, escreva "Sem exigência". Não use frases completas.
@@ -261,6 +265,7 @@ PROMPT_ESTRUTURA = """\
     {
       "numero": 1,
       "catmat": "000000",
+      "produto": "Pneu",
       "medida": "195/65 R15",
       "camara": "Sem",
       "qtde": 0,
@@ -537,14 +542,14 @@ def build_blocks(a: dict, doc_blocks: list | None = None) -> list:
     itens = a["itens"]
     qtde_total = sum(i.get("qtde", 0) for i in itens)
     rows_itens = [
-        [i["numero"], i.get("catmat", ""), i["medida"],
+        [i["numero"], i.get("catmat", ""), i.get("produto", ""), i["medida"],
          i.get("camara", "—"), i["qtde"],
          i.get("valor_unit", ""), i.get("valor_total", ""), i.get("obs", "")]
         for i in itens
-    ] + [["TOTAL", "", "", "", qtde_total, "", c["valor_total"], ""]]
+    ] + [["TOTAL", "", "", "", "", qtde_total, "", c["valor_total"], ""]]
 
     bl.append(b_table(
-        ["Item", "CATMAT", "Medida", "Câmara", "Qtde", "Valor UN", "Valor Total", "Obs"],
+        ["Item", "CATMAT", "Produto", "Medida", "Câmara", "Qtde", "Valor UN", "Valor Total", "Obs"],
         rows_itens
     ))
     if a.get("entrega_local"):
