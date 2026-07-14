@@ -43,6 +43,8 @@ licit/
 │   ├── coletor_pncp.py         Fase 1 — descobre editais (API de busca), grava em Postgres
 │   ├── coletor_pncp_detalhe.py Fase 2 — baixa detalhe+itens+resultado de cada edital da fila
 │   ├── filtro_pneu.py          Filtro compartilhado "é pneu de verdade?" (regex + regras)
+│   ├── test_filtro_pneu.py     Regressão do filtro (12 achados históricos + 4 de 14/jul/2026)
+│   │                           — ver "Auto-aperfeiçoamento" abaixo
 │   ├── pneu_medida_matcher.py  Matching determinístico de medida (tupla largura/perfil/aro),
 │   │                           reusado pelo cotacao_master/ — ver Ciclo de match abaixo
 │   ├── conectar_pncp.py        Queries do schema `public` (mercado PNCP) usadas pelo dashboard
@@ -78,6 +80,26 @@ licit/
 | `pncp_coletor_detalhe.yml` | a cada ~5h30 | Fase 2 — processa fila pendente (editais novos entram sozinhos) |
 
 Fase 2 não descobre edital novo sozinha — só fase 1 faz isso (API não permite paginar por data). Rodar `coletor_pncp.py --reset` é a única forma de achar processo novo.
+
+### Auto-aperfeiçoamento do filtro (`filtro_pneu.py`)
+
+Regra fixada em `CLAUDE.md` §17.15, mesma cadência do §17.14 (mensal, último dia útil —
+compartilha o lembrete de calendário, ver `feedback_licit_cotacao_master_autoaperfeicoamento`
+na memória). 2 investigações separadas, cada rodada:
+
+1. **Falso positivo/negativo no filtro item-a-item** — cruza `itens.eh_pneu=TRUE` contra o
+   campo estruturado `material_ou_servico` (sinal barato, nunca usado por padrão) + amostra os
+   buckets de risco. Todo bug achado vira teste em `test_filtro_pneu.py` **antes** do fix (prova
+   que é bug de verdade), depois o fix, depois **medir o impacto na base inteira** (quantos itens
+   mudariam de classificação) antes de aplicar via `recomputar_filtro.py` — repetir a medição até
+   estabilizar (achado 14/jul/2026: um fix mal calibrado regride caso que já funcionava; só
+   medição contra a base real pega isso).
+2. **Cobertura da busca (fase 1)** — `TERMO_BUSCA` é 1 palavra só ("Pneu"). Testar se edital com
+   pneu "escondido" (título/descrição burocrático genérico) escapa: buscar termo mais amplo/
+   adjacente na API ao vivo pra 1 UF amostra, comparar contra o banco, e **confirmar item a item**
+   (catálogo real via API de detalhe) se os "novos" achados têm pneu de verdade — a maioria de
+   termo genérico é ruído (achado 14/jul/2026: 36 candidatos amostrados via "manutenção de
+   frota"/"peça veícular"/"borracharia", 0 tinham pneu real).
 
 ## Cotação Master (coleta diária de preço, independente de edital)
 

@@ -82,8 +82,11 @@ RE_VEICULO_INICIO = re.compile(
 #    Ancorado no início (como RE_VEICULO_INICIO): se a frase COMEÇA com montagem/
 #    desmontagem, é o serviço sendo vendido, não o pneu — diferente de "PNEU X - INCLUSO
 #    MONTAGEM E INSTALAÇÃO" (começa com "PNEU", venda do pneu com serviço agregado, mantido).
+# achado 14/jul/26 (auditoria de falso positivo, cruzando com material_ou_servico do
+# PNCP): "REPARO DE PNEU ARO..." nunca desqualificava — "reparo" não estava em nenhuma
+# lista de exclusão, nem aqui nem em RE_EXCLUSAO_SERVICO.
 RE_SERVICO_INICIO = re.compile(
-    rf"^\s*{RE_PREFIXO_IGNORAR}(montagem|desmontagem|servi[çc]o|execu[çc][ãa]o)\b",
+    rf"^\s*{RE_PREFIXO_IGNORAR}(montagem|desmontagem|servi[çc]o|execu[çc][ãa]o|reparo)\b",
     re.IGNORECASE,
 )
 # 2. Roda/aro de liga leve: "ARO 175/70 R13 FABRICADO EM LIGA LEVE", "RODA LIGA LEVE 205/60
@@ -113,13 +116,40 @@ RE_EXCLUSAO_MAQUINA = re.compile(
 # RECAUCHUTAGEM OU REMODELAGEM" é uma cláusula de PROIBIÇÃO exigindo pneu NOVO — mas
 # RE_EXCLUSAO_SERVICO batia "recapagem"/"recauchutagem" sem entender a negação, excluindo
 # pneu novo genuíno (23 casos achados). Removida da string antes de checar exclusão.
+# achado 14/jul/26: ao tornar recauchutagem/recapagem/ressolagem soltos (sem exigir "de
+# pneu" depois, pra pegar "PNEU RECAUCHUTAGEM..." com ordem invertida), 2 padrões novos de
+# pneu NOVO genuíno passaram a ser excluídos por engano (medido comparando a base toda
+# antes de aplicar — 73 casos mudariam, a maioria correta, mas ~15 eram regressão real):
+#   1. "sem reforma ou recauchutagem" — mesma exigência de pneu novo, fraseado com "sem"
+#      em vez de "não aceitando" ("PNEUS - Pneu 225-65 R16... sem reforma ou recauchutagem").
+#   2. "capaz de suportar 2 recauchutagens futuras" — especificação de DURABILIDADE do
+#      pneu novo (casco reforçado aguenta recapagem futura), não descrição do item em si.
 RE_PROIBICAO_REFORMA = re.compile(
     r"n[ãa]o\s+(se\s+)?(ser[ãa]o?\s+)?aceit[ao]?s?[^.;]{0,120}?"
-    r"(recondicionad|reformad|recapad|recauchutad|remodelad)[^.;]{0,80}",
+    r"(recondicionad|reformad|recapad|recauchutad|remodelad)[^.;]{0,80}"
+    # achado 14/jul/26, 3ª rodada: gap coringa [^.;]{0,40}? entre "sem" e o termo (2ª
+    # versão) é permissivo demais — bateu "sem DEFEITOS, a RECAPAGEM deverá ser..." (isso
+    # é serviço de recapagem de verdade, "pneu usado" explícito no texto, não cláusula de
+    # proibição). Ponte restrita só às palavras realmente vistas entre "sem" e o termo
+    # ("uso [anterior/prévio]", "reforma", vírgula, "ou") — não wildcard genérico.
+    r"|sem\s+(qualquer\s+)?(uso(\s+(anterior|pr[ée]vio))?|reforma)?[\s,]*(ou\s+)?"
+    r"(recondicionament|recauchutag|recapag|ressolag|remoldag|reform)\w*[^.;]{0,80}"
+    r"|suportar[^.;]{0,60}?(recauchutag|recapag|ressolag|remoldag|reform)\w*[^.;]{0,80}"
+    # achado 14/jul/26, 3ª rodada: "NÃO SENDO RESULTANTE DE [processo de] remoldagem e
+    # recauchutagem" — 3ª fraseologia de exigência de pneu novo (nem "não aceita", nem "sem").
+    r"|n[ãa]o\s+sendo\s+resultante\s+de[^.;]{0,60}?"
+    r"(recondicionament|recauchutag|recapag|ressolag|remoldag|reform)\w*[^.;]{0,80}",
     re.IGNORECASE,
 )
 RE_EXCLUSAO_SERVICO = re.compile(
-    r"recapagem|vulcaniza[çc][ãa]o|conserto|concerto\s+(de|em)|"  # "concerto" = erro ortográfico comum de "conserto" em edital
+    # achado 14/jul/26 (auditoria de falso positivo): "recapagem"/"recauchutagem"/
+    # "ressolagem" são termos técnicos específicos de reforma de pneu — nunca aparecem
+    # em contexto não-relacionado, seguro deixar soltos (sem exigir "de pneu" depois).
+    # Plural de "-agem" troca M por NS ("recapagem"→"recapagens", não "recapagem"+s) —
+    # "recapagens?" sozinho SÓ bate o plural, quebra o singular (bug na 1ª tentativa
+    # desse fix, achado rodando a suíte de teste antes de confiar). "-age(m|ns)" cobre
+    # os 2 corretamente.
+    r"recapage(m|ns)|recauchutage(m|ns)|ressolage(m|ns)|vulcaniza[çc][ãa]o|conserto|concerto\s+(de|em)|"  # "concerto" = erro ortográfico comum de "conserto" em edital
     r"presta[çc][aã]o\s+de\s+servi[çc]|servi[çc]os?\s+de\s+(borracharia|recauchutagem|vulcaniza|substitui|troca)|"
     r"loca[çc][aã]o\s+de\s+(trator|m[áa]quina|equipamento)|"
     r"loca[çc][aã]o\s+(di[áa]ria\s+)?de.{0,40}(ve[íi]culo|van|minibus|micro[ -]?[ôo]nibus|[ôo]nibus|caminh[ãa]o|ambul[âa]ncia)|"
@@ -130,13 +160,11 @@ RE_EXCLUSAO_SERVICO = re.compile(
     # RE_SERVICO_INICIO (ancorado no início da descrição), que só pega quando montagem/
     # desmontagem/serviço é o OBJETO do item, não uma cláusula de serviço agregado à venda.
     r"rod[íi]zio\s+de\s+pneus?|remendo\s+de\s+pneus?|"
-    # achado 07/jul/26 (auditoria jun-jul/2026): esses termos aparecem SOLTOS no catálogo,
-    # sem "serviços de" na frente ("RECAUCHUTAGEM DE PNEU 19.5X24", "SUBSTITUIÇÃO PNEU
-    # 2.50-17") — hoje só ficam False por acaso (medida sem R não bate bate_produto), mas
-    # se RE_MEDIDA_R/RE_MEDIDA_AMPLA for expandido no futuro pra cobrir esses formatos,
-    # precisam estar aqui pra continuar corretamente excluídos como serviço, não venda nova.
-    r"recauchutagem\s+(de\s+)?pneus?|recupera[çc][ãa]o\s+de\s+pneus?|substitui[çc][ãa]o\s+(de\s+)?pneus?|"
-    r"ressolagem\s+(de\s+)?pneus?|"
+    # achado 07/jul/26 (auditoria jun-jul/2026): "recuperação"/"substituição" sozinhos são
+    # genéricos demais fora do domínio de pneu (podem aparecer em outro contexto qualquer),
+    # por isso continuam exigindo "de pneu" — diferente de recapagem/recauchutagem/ressolagem
+    # acima, que são jargão específico o bastante pra não precisar da âncora.
+    r"recupera[çc][ãa]o\s+de\s+pneus?|substitui[çc][ãa]o\s+(de\s+)?pneus?|"
     r"troca\s+de\s+(pneus?|bicos?)|"
     r"n[úu]cleo.*v[áa]lvula|v[áa]lvula.*n[úu]cleo",
     re.IGNORECASE,
