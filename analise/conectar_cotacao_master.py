@@ -48,3 +48,20 @@ def contar_aliases_pendentes() -> int:
         return con.execute(
             text("SELECT COUNT(*) FROM cotacao_fornecedor.aliases_medida WHERE aprovado_por_humano = FALSE")
         ).scalar()
+
+
+def carregar_aliases_pendentes_detalhe() -> pd.DataFrame:
+    """Lista completa (não só contagem) — só leitura. Aprovação de verdade é
+    manual via revisar_aliases_pendentes.py (terminal, privado) — dashboard é
+    público, não expõe ação de escrita aqui."""
+    return pd.read_sql_query(
+        """
+        SELECT a.id, a.fornecedor, a.texto_bruto, a.inferido, a.created_at,
+               m.texto_canonico AS medida
+        FROM cotacao_fornecedor.aliases_medida a
+        JOIN cotacao_fornecedor.medidas m ON m.id = a.medida_id
+        WHERE a.aprovado_por_humano = FALSE
+        ORDER BY a.created_at
+        """,
+        ENGINE,
+    )

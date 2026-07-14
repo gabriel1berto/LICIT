@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""Página — Cotação Fornecedor: Aliases Pendentes (só leitura — dashboard é público).
+
+Aprovação de verdade é manual, via revisar_aliases_pendentes.py rodado no
+terminal (privado). Não expor botão de escrita aqui — qualquer visitante do
+dashboard público poderia aprovar alias sem revisão real.
+"""
+
+import streamlit as st
+
+from dashboard_common import carregar_aliases_pendentes_detalhe
+
+st.title("⏳ Aliases Pendentes")
+st.caption(
+    "Notações de produto ainda não aprovadas manualmente — cotação correspondente aparece "
+    "como confiança 'parcial' até ser revisada. Aprovação é feita fora daqui, via "
+    "`revisar_aliases_pendentes.py` (terminal, privado) — não há ação de escrita neste dashboard "
+    "público."
+)
+
+pendentes = carregar_aliases_pendentes_detalhe()
+
+if pendentes.empty:
+    st.success("Nenhum alias pendente — tudo revisado.")
+    st.stop()
+
+st.warning(f"⚠️ {len(pendentes)} notação(ões) pendente(s) de aprovação.")
+
+tabela = pendentes.rename(columns={
+    "fornecedor": "Fornecedor", "texto_bruto": "Notação do produto", "medida": "Medida",
+    "inferido": "Construção inferida", "created_at": "Visto em",
+}).drop(columns=["id"])
+st.dataframe(tabela, use_container_width=True, hide_index=True)
