@@ -24,9 +24,12 @@ Fluxo:
      disparar e-mail automático pro dono do repo — alerta só dispara
      quando o fornecedor rejeitou TODAS as tentativas, não na 1ª falha.
 
-Uso: python cotacao_master.py
+Uso:
+    python cotacao_master.py                  # os 4 fornecedores
+    python cotacao_master.py --apenas Bransales   # só 1 (ex: tarefa agendada local, ver §Bransales no README)
 """
 
+import argparse
 import json
 import os
 import subprocess
@@ -220,6 +223,15 @@ def gravar_cotacoes(fornecedor: str, produtos: list[dict], item_para_medida: dic
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--apenas",
+        help="Nome(s) de fornecedor, separado por vírgula (ex: Bransales) — roda só esses, "
+             "ignorando o skip de CI (pensado pra tarefa agendada local rodando só Bransales).",
+    )
+    args = parser.parse_args()
+    filtro = {f.strip() for f in args.apenas.split(",")} if args.apenas else None
+
     if not os.path.exists(MEDIDAS_CFG):
         print(f"ERRO: {MEDIDAS_CFG} não encontrado.", file=sys.stderr)
         sys.exit(1)
@@ -231,6 +243,8 @@ def main():
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
 
     for fornecedor, script, out_path in SCRAPERS:
+        if filtro is not None and fornecedor not in filtro:
+            continue
         if EM_CI and fornecedor in FORNECEDORES_SO_LOCAL:
             print(
                 f"\n[{fornecedor}] pulado no GitHub Actions — WAF da Bransales bloqueia IP "

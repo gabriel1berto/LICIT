@@ -43,12 +43,28 @@ licit/
 │   ├── coletor_pncp.py         Fase 1 — descobre editais (API de busca), grava em Postgres
 │   ├── coletor_pncp_detalhe.py Fase 2 — baixa detalhe+itens+resultado de cada edital da fila
 │   ├── filtro_pneu.py          Filtro compartilhado "é pneu de verdade?" (regex + regras)
-│   ├── conectar_pncp.py        Views/queries usadas pelo dashboard
-│   ├── dashboard_pncp.py       Dashboard Streamlit (geografia, sazonalidade, fornecedores)
+│   ├── pneu_medida_matcher.py  Matching determinístico de medida (tupla largura/perfil/aro),
+│   │                           reusado pelo cotacao_master/ — ver Ciclo de match abaixo
+│   ├── conectar_pncp.py        Queries do schema `public` (mercado PNCP) usadas pelo dashboard
+│   ├── conectar_cotacao_master.py  Queries do schema `cotacao_fornecedor` (ver Cotação Master abaixo)
+│   ├── dashboard_common.py     Estilo/cores/loaders compartilhados entre as páginas do dashboard
+│   ├── dashboard_pncp.py       Entrypoint do dashboard (Streamlit multi-page — `st.navigation`)
+│   ├── views/                  Conteúdo de cada página do dashboard (Mercado PNCP + Cotação Fornecedor)
 │   ├── recomputar_filtro.py    Reaplica filtro_pneu.py sem reraspar (quando o filtro muda)
 │   ├── migrar_para_supabase.py Migração one-shot SQLite → Postgres (já rodada, mantida por histórico)
-│   ├── schema_supabase.sql     Schema das 6 tabelas
+│   ├── schema_supabase.sql     Schema das 6 tabelas (schema `public`, mercado PNCP)
 │   └── requirements.txt        Deps desse pipeline (psycopg2, streamlit, plotly, curl_cffi...)
+│
+├── cotacao_master/           Coleta diária de preço direto nos 4 distribuidor (ver seção própria abaixo)
+│   ├── *_scraper_master.py     Cópia dos 4 scrapers de edital, adaptada (sem limite de candidato,
+│   │                           ficha técnica sempre) — originais na raiz NUNCA são alterados
+│   ├── cotacao_master.py       Orquestrador — roda os 4 sequencial, grava no Supabase
+│   ├── classificador_alias.py  Regra determinística (zero custo de token) pra sinalizar produto
+│   │                           reforçado/comercial (sufixo C, índice de carga duplo, Lonas, Van)
+│   └── requirements.txt
+│
+├── schema_cotacoes_diarias.sql  Schema do schema `cotacao_fornecedor` (medidas/aliases_medida/cotacoes)
+├── medidas_prioritarias.json    Config versionada — lista de medida cotada diariamente
 │
 └── .github/workflows/        Automação (ver abaixo)
 ```
@@ -62,6 +78,47 @@ licit/
 | `pncp_coletor_detalhe.yml` | a cada ~5h30 | Fase 2 — processa fila pendente (editais novos entram sozinhos) |
 
 Fase 2 não descobre edital novo sozinha — só fase 1 faz isso (API não permite paginar por data). Rodar `coletor_pncp.py --reset` é a única forma de achar processo novo.
+
+## Cotação Master (coleta diária de preço, independente de edital)
+
+Pipeline separado do fluxo de cotação por edital (que segue intocado) — cota diariamente as
+medidas de `medidas_prioritarias.json` nos 4 distribuidor já cadastrados, grava histórico no
+schema `cotacao_fornecedor` (mesmo projeto Supabase do mercado PNCP, schema separado — ver
+`schema_cotacoes_diarias.sql`). Visível na aba "💰 Cotação Fornecedor" do dashboard.
+
+**Automação:** `.github/workflows/cotacao_master.yml`, só `workflow_dispatch` (manual) até
+validar rodagem real — sem cron ainda.
+
+### Bransales — só roda local (fixado 14/jul/2026)
+
+O WAF da Bransales ("gocache") serve reCAPTCHA pro IP de datacenter do runner do GitHub Actions
+— nunca chega no formulário de login (confirmado via screenshot/HTML do artifact
+`cotacao-master-debug`, IP `52.x.x.x`, faixa Azure). Não é bug, é bloqueio de rede real — não
+contornamos captcha.
+
+`cotacao_master.py` detecta `GITHUB_ACTIONS=true` (setado pelo próprio runner) e pula Bransales
+sozinho na nuvem, sem contar como quebra/disparar alerta. Os outros 3 (Cantu/GP/Green Pneus)
+rodam normal todo dia via Actions.
+
+Bransales roda **só local** (IP residencial, nunca bloqueado — já provado em todo teste manual):
+
+```
+python cotacao_master.py --apenas Bransales
+```
+
+Tarefa agendada no Windows (`LICIT - Cotacao Master Bransales`, diária 6h, `WakeToRun` +
+`StartWhenAvailable`) cobre isso automaticamente nesta máquina. Limitação real: nenhum software
+liga um PC totalmente desligado — `WakeToRun` só acorda de Suspensão/Hibernação;
+`StartWhenAvailable` roda a tarefa assim que a máquina ligar de novo se perdeu o horário; ligar
+sozinho a partir de desligado de verdade exige BIOS ("Power On By RTC Alarm"), fora do que
+Windows/Task Scheduler alcança.
+
+### Ciclo de match de medida
+
+Alias novo (nunca visto daquele fornecedor) sempre entra pendente (`aprovado_por_humano=false`)
+— cotação correspondente vira confiança `parcial` até revisão manual. Revisão obrigatória por
+fornecedor novo + mensal no último dia útil (`CLAUDE.md` §17.14). `classificador_alias.py`
+pré-sinaliza suspeita de produto reforçado/comercial antes da revisão (zero custo de token).
 
 ## Dados
 
