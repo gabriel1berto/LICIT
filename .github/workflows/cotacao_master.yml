@@ -43,3 +43,14 @@ jobs:
           GREEN_EMAIL: ${{ secrets.GREEN_EMAIL }}
           GREEN_PASSWORD: ${{ secrets.GREEN_PASSWORD }}
         run: python cotacao_master/cotacao_master.py
+
+      - name: Upload debug (só existe se algum scraper quebrou o login)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cotacao-master-debug
+          path: |
+            cotacao_master/debug_*.png
+            cotacao_master/debug_*.html
+          if-no-files-found: ignore
+          retention-days: 7

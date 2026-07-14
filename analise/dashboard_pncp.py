@@ -17,6 +17,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from conectar_pncp import carregar_base_pncp, carregar_fornecedores_resultado, cobertura_por_uf, cobertura_pct
+from conectar_cotacao_master import carregar_cotacoes as carregar_cotacoes_master, contar_aliases_pendentes
 
 SQL_DIR = Path(__file__).parent
 
@@ -113,6 +114,16 @@ def carregar_cobertura_uf() -> pd.DataFrame:
 def carregar_lat_lon() -> pd.DataFrame:
     ll = pd.read_csv(SQL_DIR / "municipios_lat_lon.csv")
     return ll[["codigo_ibge", "latitude", "longitude"]]
+
+
+@st.cache_data(ttl=300)
+def carregar_cotacao_master() -> pd.DataFrame:
+    return carregar_cotacoes_master()
+
+
+@st.cache_data(ttl=300)
+def carregar_aliases_pendentes() -> int:
+    return contar_aliases_pendentes()
 
 
 def main() -> None:
@@ -217,8 +228,8 @@ def main() -> None:
         top_medidas = pd.DataFrame(columns=["medida_extraida", "n_itens", "valor_total"])
         top_medidas_nomes_8 = pd.Index([])
 
-    aba_entrar, aba_produto, aba_sazon, aba_forn = st.tabs(
-        ["🎯 Análise de mercado", "📦 Produto", "📅 Sazonalidade", "🏭 Fornecedores e Preço"]
+    aba_entrar, aba_produto, aba_sazon, aba_forn, aba_master = st.tabs(
+        ["🎯 Análise de mercado", "📦 Produto", "📅 Sazonalidade", "🏭 Fornecedores e Preço", "💰 Cotação Master"]
     )
 
     # ── Aba Onde Entrar ──────────────────────────────────────────────────
@@ -744,6 +755,99 @@ def main() -> None:
             fig5.update_layout(showlegend=False)
             fundo_transparente(fig5, tickformat_x=False)
             st.plotly_chart(fig5, use_container_width=True)
+
+
+    # ── Aba Cotação Master ────────────────────────────────────────────────
+    # Fonte diferente das outras abas (schema cotacao_fornecedor, não public/PNCP)
+    # — filtros de UF/categoria/regime da sidebar não se aplicam aqui.
+    with aba_master:
+        st.caption(
+            "Fonte: cotação diária direta nos 4 distribuidores já cadastrados "
+            "(Bransales, Cantu, GP Fácil, PneuGreen) — schema `cotacao_fornecedor`, "
+            "pipeline separado do mercado PNCP. Rodada manual por enquanto (workflow "
+            "`cotacao_master.yml` sem cron ainda)."
+        )
+
+        cm = carregar_cotacao_master()
+        n_pendentes = carregar_aliases_pendentes()
+
+        if n_pendentes:
+            st.warning(
+                f"⚠️ {n_pendentes} notação(ões) de produto pendente(s) de aprovação humana "
+                "(`revisar_aliases_pendentes.py`) — cotação correspondente aparece como "
+                "confiança 'parcial' até ser revisada."
+            )
+
+        if cm.empty:
+            st.info("Nenhuma cotação master gravada ainda.")
+        else:
+            cm = cm.copy()
+            # string, não datetime.date — px.line trata date como eixo temporal contínuo
+            # e gera tick fracionário esquisito (23:59:59.999) quando o range é de 1-2 dias só.
+            cm["data"] = pd.to_datetime(cm["timestamp"]).dt.strftime("%Y-%m-%d")
+
+            medidas_disp = sorted(cm["medida"].unique())
+            medida_sel = st.selectbox("Medida:", medidas_disp, key="medida_master")
+            cmm = cm[cm["medida"] == medida_sel]
+
+            col_tend_m, col_atual_m = st.columns([1, 1])
+
+            with col_tend_m:
+                st.subheader("Preço mínimo por fornecedor — tendência diária")
+                tend = (
+                    cmm.groupby(["data", "fornecedor"], as_index=False)["preco"]
+                       .min()
+                       .sort_values("data")
+                )
+                if tend["data"].nunique() < 2:
+                    st.caption("Só 1 dia de dado até agora — vira linha de tendência real conforme mais rodadas acontecerem.")
+                figcm = px.line(
+                    tend, x="data", y="preco", color="fornecedor", markers=True,
+                    labels={"data": "Data", "preco": "Preço mínimo (R$)", "fornecedor": "Fornecedor"},
+                    title=f"Preço mínimo — {medida_sel}",
+                )
+                figcm.update_layout(legend_title_text="")
+                # type="category" força eixo discreto — sem isso Plotly reconhece o padrão
+                # ISO da string ("2026-07-14") e converte pra eixo temporal contínuo de
+                # qualquer jeito, gerando tick fracionário (23:59:59.999) num range de 1-2 dias.
+                figcm.update_xaxes(type="category")
+                fundo_transparente(figcm, tickformat_x=False)
+                st.plotly_chart(figcm, use_container_width=True)
+
+            with col_atual_m:
+                st.subheader("Última rodada — comparação por fornecedor")
+                ultima_data = cmm["data"].max()
+                atual = cmm[cmm["data"] == ultima_data].sort_values("preco")
+                min_forn = atual.groupby("fornecedor", as_index=False)["preco"].min().sort_values("preco")
+                figb = px.bar(
+                    min_forn, x="preco", y="fornecedor", orientation="h", text="preco",
+                    labels={"preco": "Preço mínimo (R$)", "fornecedor": ""},
+                    title=f"Mais barato por fornecedor — {ultima_data}",
+                )
+                figb.update_traces(marker_color="#2a78d6", texttemplate="R$ %{text:.2f}", textposition="outside")
+                fundo_transparente(figb)
+                st.plotly_chart(figb, use_container_width=True)
+
+            st.divider()
+            st.subheader(f"Detalhe completo — última rodada ({ultima_data})")
+            detalhe = atual[[
+                "fornecedor", "marca", "preco", "confianca_match", "ic", "iv", "treadwear",
+                "construcao", "num_lonas", "tipo_terreno", "inmetro", "url",
+            ]].rename(columns={
+                "fornecedor": "Fornecedor", "marca": "Marca", "preco": "Preço (R$)",
+                "confianca_match": "Confiança", "ic": "IC", "iv": "IV", "treadwear": "Treadwear",
+                "construcao": "Construção", "num_lonas": "Nº Lonas", "tipo_terreno": "Terreno",
+                "inmetro": "INMETRO", "url": "Link",
+            }).sort_values("Preço (R$)")
+            st.dataframe(
+                detalhe, use_container_width=True, hide_index=True,
+                column_config={"Link": st.column_config.LinkColumn("Link", display_text="abrir")},
+            )
+            st.caption(
+                "Confiança 'parcial' = notação do produto ainda não aprovada manualmente "
+                "(1ª vez que aparece daquele fornecedor) — preço é real, só a confirmação de "
+                "que bate exatamente a medida ainda não foi revisada por humano."
+            )
 
 
 if __name__ == "__main__":

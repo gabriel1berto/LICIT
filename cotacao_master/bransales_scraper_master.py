@@ -298,7 +298,22 @@ def main():
         browser = pw.chromium.launch(headless=True)
         page    = browser.new_page()
         page.set_extra_http_headers({"Accept-Language": "pt-BR,pt;q=0.9"})
-        login(page)
+        try:
+            login(page)
+        except Exception:
+            # Diagnóstico: falha em CI (GitHub Actions) mas não local — suspeita de
+            # WAF bloqueando IP de datacenter (Bransales já retornou 403 pra request
+            # crua antes). Screenshot + HTML da página no momento da falha, subidos
+            # como artifact pelo workflow, mostram o que o site devolveu de verdade.
+            debug_dir = os.path.dirname(os.path.abspath(__file__))
+            try:
+                page.screenshot(path=os.path.join(debug_dir, "debug_bransales_falha.png"), full_page=True)
+                with open(os.path.join(debug_dir, "debug_bransales_falha.html"), "w", encoding="utf-8") as f:
+                    f.write(page.content())
+                print(f"[debug] screenshot/HTML da falha salvos em {debug_dir}", file=sys.stderr)
+            except Exception as e2:
+                print(f"[debug] não deu pra capturar screenshot/HTML: {e2}", file=sys.stderr)
+            raise
 
         for cfg in items_cfg:
             res = process_item(page, cfg)
