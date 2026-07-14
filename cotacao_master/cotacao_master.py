@@ -184,7 +184,14 @@ def gravar_cotacoes(fornecedor: str, produtos: list[dict], item_para_medida: dic
             elif row[0] is False:
                 confianca = "parcial"
             else:
-                confianca = comparar_medidas(extraida, ref)
+                # comparar_medidas() retorna "match_exato"/"match_parcial"/"sem_match"
+                # (contrato de pneu_medida_matcher.py, ver seus testes) — a constraint
+                # de cotacoes.confianca_match espera "exato"/"parcial"/"sem_match", sem
+                # o prefixo "match_". Bug achado 14/jul/2026: só aparece quando um alias
+                # JÁ está aprovado (1ª vez que esse branch roda de verdade, depois da
+                # aprovação em massa dos 31 aliases limpos) — CheckViolation na hora
+                # de gravar.
+                confianca = comparar_medidas(extraida, ref).removeprefix("match_")
 
         cur.execute(
             """
@@ -226,8 +233,17 @@ def main():
         if status == "esperado_gp_cookie":
             continue
 
-        n = gravar_cotacoes(fornecedor, produtos, item_para_medida, conn)
-        print(f"[{fornecedor}] {n} cotação(ões) gravada(s)", file=sys.stderr)
+        try:
+            n = gravar_cotacoes(fornecedor, produtos, item_para_medida, conn)
+            print(f"[{fornecedor}] {n} cotação(ões) gravada(s)", file=sys.stderr)
+        except Exception as e:
+            # Achado 14/jul/2026: exceção na escrita (ex: CheckViolation) não tratada
+            # derrubava o script inteiro — fornecedores seguintes (GP/Green) nem
+            # chegavam a rodar, mesmo sem culpa deles. Isola por fornecedor, igual já
+            # acontece pro scraper em si — 1 escrita ruim não impede os outros 3.
+            conn.rollback()
+            print(f"[{fornecedor}] ERRO ao gravar no banco: {e}", file=sys.stderr)
+            houve_quebra_real = True
 
     conn.close()
 
