@@ -4,5 +4,6 @@ __pycache__/
 gp_cookies.json
 *.json
 !package.json
+!medidas_prioritarias.json
 dados/*/*.csv
 analise/pncp_raw.db

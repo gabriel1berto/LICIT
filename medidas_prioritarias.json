@@ -1,0 +1,18 @@
+[
+  {
+    "item": 1,
+    "descricao": "Pneu 175/70 R14",
+    "categoria": "passeio",
+    "largura": "175",
+    "altura": "70",
+    "aro": "14",
+    "construcao": "",
+    "min_lonas": 0,
+    "min_ic": 0,
+    "min_iv": "",
+    "min_treadwear": 0,
+    "padrao_piso": "",
+    "qtde": 1,
+    "obs": "Medida #1 em frequencia real (itens categoria Passeio, base analise/ Supabase, 34634 itens) - cotacao de mercado diaria, nao ligada a edital"
+  }
+]

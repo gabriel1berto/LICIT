@@ -1,0 +1,45 @@
+name: Cotação Master — coleta diária de preço por medida
+
+# Só manual por enquanto (workflow_dispatch) — sem `schedule:`. Ativar cron
+# só depois de validar a 1ª rodada real (decisão do usuário, ver plano
+# cotacao_master).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: cotacao-master
+  cancel-in-progress: false
+
+jobs:
+  cotacao_master:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r cotacao_master/requirements.txt
+
+      - name: Instalar Chromium (Playwright)
+        run: playwright install --with-deps chromium
+
+      - name: Escrever gp_cookies.json
+        run: echo '${{ secrets.GP_COOKIES_JSON }}' > gp_cookies.json
+
+      - name: Rodar cotação master
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BRANSALES_EMAIL: ${{ secrets.BRANSALES_EMAIL }}
+          BRANSALES_PASSWORD: ${{ secrets.BRANSALES_PASSWORD }}
+          CANTU_EMAIL: ${{ secrets.CANTU_EMAIL }}
+          CANTU_PASSWORD: ${{ secrets.CANTU_PASSWORD }}
+          GREEN_EMAIL: ${{ secrets.GREEN_EMAIL }}
+          GREEN_PASSWORD: ${{ secrets.GREEN_PASSWORD }}
+        run: python cotacao_master/cotacao_master.py
