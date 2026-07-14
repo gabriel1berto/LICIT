@@ -6,7 +6,8 @@ import plotly.express as px
 import streamlit as st
 
 from dashboard_common import (
-    CATEGORIAS_ABREV, CORES_REGIME_TIPO, carregar_cobertura_uf, carregar_lat_lon,
+    CATEGORIAS_ABREV, CORES_REGIME_TIPO, DIVERGING_NEUTRO, DIVERGING_POLO_NEG, DIVERGING_POLO_POS,
+    carregar_cobertura_uf, carregar_lat_lon,
     fundo_transparente, para_mil, preparar_pagina_pncp,
 )
 
@@ -279,7 +280,11 @@ else:
             heat["premio_label"] = heat["premio_pct"].apply(lambda v: f"{v:+.1f}%")
             fig_heat = px.bar(
                 heat, x="premio_pct", y="uf", orientation="h", color="premio_pct", text="premio_label",
-                color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
+                # achado 14/jul/26 (auditoria dataviz): RdYlGn tem amarelo no ponto
+                # médio — anti-padrão (o meio de um diverging tem que ler como "nada",
+                # nunca um hue). Par validado é blue↔red, meio cinza neutro.
+                color_continuous_scale=[[0, DIVERGING_POLO_NEG], [0.5, DIVERGING_NEUTRO], [1, DIVERGING_POLO_POS]],
+                color_continuous_midpoint=0,
                 labels={"premio_pct": "Prêmio regional (%)", "uf": "UF", "n": legenda_n},
                 title=titulo_heat,
                 hover_data={"n": True},
@@ -288,7 +293,7 @@ else:
             fig_heat.update_layout(coloraxis_showscale=False, height=max(400, 24 * len(heat)))
             fundo_transparente(fig_heat)
             st.plotly_chart(fig_heat, use_container_width=True)
-            st.caption("Verde = paga acima da mediana nacional. Vermelho = abaixo. Todas as UF com pelo menos 1 venda — cuidado com UF de amostra pequena (ver tabela ao lado).")
+            st.caption("Azul = paga acima da mediana nacional. Vermelho = abaixo. Todas as UF com pelo menos 1 venda — cuidado com UF de amostra pequena (ver tabela ao lado).")
 
 st.divider()
 st.subheader("Mapa por município")

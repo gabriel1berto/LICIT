@@ -5,7 +5,17 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from dashboard_common import carregar_cotacao_master, fundo_transparente
+from dashboard_common import PALETA_CATEGORICA_8, carregar_cotacao_master, fundo_transparente
+
+# Fixo, não muda com filtro/ranking (achado 14/jul/26, auditoria dataviz) —
+# são sempre os mesmos 4 fornecedores reais, cor tem que seguir a entidade,
+# nunca a posição/rank do momento (regra "color follows the entity").
+CORES_FORNECEDOR = {
+    "Bransales":   PALETA_CATEGORICA_8[0],
+    "Cantu":       PALETA_CATEGORICA_8[1],
+    "GP":          PALETA_CATEGORICA_8[2],
+    "Green Pneus": PALETA_CATEGORICA_8[3],
+}
 
 st.title("📈 Tendência")
 st.caption("Histórico de preço mínimo por fornecedor — cresce conforme mais rodadas diárias acontecerem.")
@@ -34,6 +44,7 @@ if tend["data"].nunique() < 2:
 
 figcm = px.line(
     tend, x="data", y="preco", color="fornecedor", markers=True,
+    color_discrete_map=CORES_FORNECEDOR,
     labels={"data": "Data", "preco": "Preço mínimo (R$)", "fornecedor": "Fornecedor"},
     title=f"Preço mínimo — {medida_sel}",
 )

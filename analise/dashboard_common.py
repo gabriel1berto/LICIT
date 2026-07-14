@@ -5,6 +5,7 @@ páginas do dashboard (Mercado PNCP + Cotação Fornecedor). Nenhuma página
 duplica isso — 1 dono só por helper.
 """
 
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -42,8 +43,37 @@ CATEGORIAS_ABREV = {
     "CD - Pregão": "CD-Preg", "CD - Dispensa": "CD-Disp", "CD - Concorrência": "CD-Conc",
 }
 
+# Paleta categórica validada (skill dataviz — references/palette.md), 8 hues em
+# ordem fixa, sem substituição por cinza. Reusar aqui em vez de deixar o Plotly
+# gerar cor default (achado 14/jul/2026, auditoria dataviz): qualquer gráfico
+# com até 8 séries pega slot 1..N nessa ordem, nunca cor gerada/cíclica.
+PALETA_CATEGORICA_8 = [
+    "#2a78d6",  # 1 blue
+    "#1baf7a",  # 2 aqua
+    "#eda100",  # 3 yellow
+    "#008300",  # 4 green
+    "#4a3aa7",  # 5 violet
+    "#e34948",  # 6 red
+    "#e87ba4",  # 7 magenta
+    "#eb6834",  # 8 orange
+]
+
+# Par diverging validado — blue↔red, meio neutro cinza (nunca um hue no meio,
+# ver anti-patterns.md). Usado em prêmio/desconto regional (polaridade acima/
+# abaixo de referência), não em heatmap de magnitude (isso é sequential).
+DIVERGING_POLO_NEG = "#e34948"   # red  — abaixo da referência
+DIVERGING_NEUTRO   = "#f0efec"   # meio — "nada" (light mode)
+DIVERGING_POLO_POS = "#2a78d6"   # blue — acima da referência
+
 COR_INK_DARK  = "#c3c2b7"
 COR_GRID_DARK = "#3a3a37"
+
+
+def cor_categorica_ordenada(rotulos_em_ordem: list[str]) -> dict[str, str]:
+    """Mapa {rótulo: hex} pela ordem fixa da paleta validada — rótulo mais
+    relevante (ranking já decidido por quem chama) pega slot 1, e assim por
+    diante. Nunca deixar o Plotly gerar cor default pra série categórica."""
+    return dict(zip(rotulos_em_ordem, PALETA_CATEGORICA_8))
 
 
 def fundo_transparente(fig: go.Figure, tickformat_x: bool = True) -> go.Figure:
@@ -159,9 +189,17 @@ def preparar_pagina_pncp():
 
     meses_disponiveis = sorted(base["ano_mes"].dropna().unique())
     if meses_disponiveis:
+        # Padrão fixo jan/2026 até hoje (pedido 14/jul/26) — não o range inteiro
+        # disponível, que inclui proposta futura agendada (ano_mes pode passar de
+        # hoje) e histórico antigo pouco relevante pro dia a dia. Usuário ainda
+        # pode arrastar o slider pra ver mais.
+        hoje_str = date.today().strftime("%Y-%m")
+        ini_default = next((m for m in meses_disponiveis if m >= "2026-01"), meses_disponiveis[0])
+        fim_candidatos = [m for m in meses_disponiveis if m <= hoje_str]
+        fim_default = max(fim_candidatos) if fim_candidatos else meses_disponiveis[-1]
         mes_ini, mes_fim = st.sidebar.select_slider(
             "Período (ano-mês)", options=meses_disponiveis,
-            value=(meses_disponiveis[0], meses_disponiveis[-1]),
+            value=(ini_default, fim_default),
         )
     else:
         mes_ini, mes_fim = None, None

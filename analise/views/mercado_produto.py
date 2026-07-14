@@ -4,7 +4,7 @@
 import plotly.express as px
 import streamlit as st
 
-from dashboard_common import fundo_transparente, para_mil, preparar_pagina_pncp
+from dashboard_common import cor_categorica_ordenada, fundo_transparente, para_mil, preparar_pagina_pncp
 
 st.title("📦 Produto")
 
@@ -85,8 +85,13 @@ with col_tend:
     if tend_medida.empty:
         st.info("Sem dado de data suficiente pra tendência mensal nesse filtro.")
     else:
+        # achado 14/jul/26 (auditoria dataviz): cor default do Plotly nunca passou
+        # pelo validador. Paleta validada, slot 1 pra medida mais pedida e assim
+        # por diante — mesma ordem do ranking já calculado (top5_medidas).
         figt = px.line(
             tend_medida, x="ano_mes", y="n_itens", color="medida_extraida", markers=True,
+            color_discrete_map=cor_categorica_ordenada(top5_medidas),
+            category_orders={"medida_extraida": top5_medidas},
             labels={"ano_mes": "Mês", "n_itens": "Nº de itens pedidos", "medida_extraida": "Medida"},
             title="Evolução mensal de demanda — top 5 medidas",
         )
