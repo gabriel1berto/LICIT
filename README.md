@@ -113,6 +113,15 @@ liga um PC totalmente desligado — `WakeToRun` só acorda de Suspensão/Hiberna
 sozinho a partir de desligado de verdade exige BIOS ("Power On By RTC Alarm"), fora do que
 Windows/Task Scheduler alcança.
 
+### Resiliência
+
+`cotacao_master.py` retenta cada fornecedor até 3x (30s entre tentativas) antes de marcar
+quebra real — a maioria de falha de scraping web é instabilidade passageira do site, não bug
+(já visto: Bransales/Cantu falharam na 1ª tentativa e passaram limpo na 2ª, mesmo código, mesmo
+dia). Escrita no banco é isolada por fornecedor (rollback + segue pros próximos) — bug na
+gravação de 1 fornecedor não impede os outros de rodar. Só sai com `exit(1)` (dispara e-mail do
+GitHub Actions) se restar quebra real depois de esgotar tentativas.
+
 ### Ciclo de match de medida
 
 Alias novo (nunca visto daquele fornecedor) sempre entra pendente (`aprovado_por_humano=false`)
@@ -154,6 +163,12 @@ DATABASE_URL              # Postgres/Supabase, pooler transaction mode
 `credentials.json`/`token.json` (OAuth Google Sheets, gitignorados) — setup de 1x só, ver docstring de `preencher_planilha_precificacao.py`.
 
 Radar (`requirements_radar.txt`) e pipeline de mercado (`analise/requirements.txt`) têm dependências separadas de propósito — o radar não precisa puxar `psycopg2`/`streamlit`.
+
+`cotacao_master.yml` (GitHub Actions) roda em nuvem, não lê `.env` — precisa dos mesmos pares
+acima (`BRANSALES_EMAIL/PASSWORD`, `CANTU_EMAIL/PASSWORD`, `GREEN_EMAIL/PASSWORD`,
+`DATABASE_URL`) cadastrados como **Secrets do repo** (Settings → Secrets and variables →
+Actions), mais `GP_COOKIES_JSON` (conteúdo inteiro do `gp_cookies.json`, escrito em arquivo por
+um step do workflow). Bransales não entra — roda só local (ver seção Cotação Master acima).
 
 ## Segurança
 
