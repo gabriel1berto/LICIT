@@ -57,11 +57,12 @@ def carregar_aliases_pendentes_detalhe() -> pd.DataFrame:
     return pd.read_sql_query(
         """
         SELECT a.id, a.fornecedor, a.texto_bruto, a.inferido, a.created_at,
+               a.suspeita_reforcado, a.motivo_suspeita,
                m.texto_canonico AS medida
         FROM cotacao_fornecedor.aliases_medida a
         JOIN cotacao_fornecedor.medidas m ON m.id = a.medida_id
         WHERE a.aprovado_por_humano = FALSE
-        ORDER BY a.created_at
+        ORDER BY a.suspeita_reforcado DESC, a.created_at
         """,
         ENGINE,
     )

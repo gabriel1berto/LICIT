@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS cotacao_fornecedor.aliases_medida (
     inferido            BOOLEAN DEFAULT FALSE,
     aprovado_por_humano BOOLEAN DEFAULT FALSE,
     data_aprovacao      TIMESTAMP,
+    -- Classificação determinística (classificador_alias.py, zero custo de
+    -- token) — sinaliza sufixo C / índice de carga duplo / "Lonas" / "Van",
+    -- indício de produto reforçado/comercial mesmo quando a tupla de medida
+    -- bate igual a pneu de passeio comum. Achado 14/jul/2026.
+    suspeita_reforcado  BOOLEAN DEFAULT FALSE,
+    motivo_suspeita     TEXT,
     created_at          TIMESTAMP DEFAULT NOW(),
     UNIQUE (fornecedor, texto_bruto)
 );

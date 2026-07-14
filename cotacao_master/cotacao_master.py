@@ -43,6 +43,7 @@ load_dotenv(os.path.join(ROOT, ".env"))
 sys.path.insert(0, os.path.join(ROOT, "analise"))
 import psycopg2
 from pneu_medida_matcher import MedidaTupla, comparar_medidas, extrair_medida
+from classificador_alias import classificar_alias
 
 MEDIDAS_CFG = os.path.join(ROOT, "medidas_prioritarias.json")
 
@@ -170,12 +171,14 @@ def gravar_cotacoes(fornecedor: str, produtos: list[dict], item_para_medida: dic
             )
             row = cur.fetchone()
             if row is None:
+                suspeita, motivo = classificar_alias(nome)
                 cur.execute(
                     """INSERT INTO cotacao_fornecedor.aliases_medida
-                       (medida_id, fornecedor, texto_bruto, inferido, aprovado_por_humano)
-                       VALUES (%s,%s,%s,%s,FALSE)
+                       (medida_id, fornecedor, texto_bruto, inferido, aprovado_por_humano,
+                        suspeita_reforcado, motivo_suspeita)
+                       VALUES (%s,%s,%s,%s,FALSE,%s,%s)
                        ON CONFLICT (fornecedor, texto_bruto) DO NOTHING""",
-                    (medida_id, fornecedor, nome, extraida.inferido_construcao),
+                    (medida_id, fornecedor, nome, extraida.inferido_construcao, suspeita, motivo),
                 )
                 confianca = "parcial"
             elif row[0] is False:

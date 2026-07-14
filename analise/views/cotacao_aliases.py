@@ -24,10 +24,20 @@ if pendentes.empty:
     st.success("Nenhum alias pendente — tudo revisado.")
     st.stop()
 
-st.warning(f"⚠️ {len(pendentes)} notação(ões) pendente(s) de aprovação.")
+n_suspeitos = int(pendentes["suspeita_reforcado"].sum())
+st.warning(
+    f"⚠️ {len(pendentes)} notação(ões) pendente(s) de aprovação "
+    f"— **{n_suspeitos} sinalizada(s)** pelo classificador determinístico (sufixo C, índice "
+    "de carga duplo, 'Lonas' ou 'Van' — indício de produto reforçado/comercial)."
+)
 
 tabela = pendentes.rename(columns={
     "fornecedor": "Fornecedor", "texto_bruto": "Notação do produto", "medida": "Medida",
     "inferido": "Construção inferida", "created_at": "Visto em",
+    "suspeita_reforcado": "Suspeito", "motivo_suspeita": "Motivo",
 }).drop(columns=["id"])
-st.dataframe(tabela, use_container_width=True, hide_index=True)
+st.dataframe(
+    tabela, use_container_width=True, hide_index=True,
+    column_config={"Suspeito": st.column_config.CheckboxColumn("Suspeito", disabled=True)},
+)
+st.caption("Ordenado com os suspeitos primeiro. Classificação roda no orquestrador, sem custo de token.")
