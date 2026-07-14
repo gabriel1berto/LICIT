@@ -54,6 +54,12 @@ SCRAPERS = [
     ("Green Pneus", os.path.join(HERE, "green_scraper_master.py"),     os.path.join(HERE, "results_master_green.json")),
 ]
 
+# GITHUB_ACTIONS=true é setado automático pelo runner — nenhum toggle manual
+# necessário, o script já sabe se está na nuvem (IP de datacenter, bloqueado
+# por WAF) ou local (IP residencial, funciona normal).
+EM_CI = os.environ.get("GITHUB_ACTIONS") == "true"
+FORNECEDORES_SO_LOCAL = {"Bransales"}
+
 # Assinatura de falha ESPERADA (cookie GP expirado) — não conta como quebra,
 # não entra no retry (repetir não resolve cookie vencido).
 GP_COOKIE_EXPIRADO_MSG = "Cookies expirados ou inválidos"
@@ -225,6 +231,16 @@ def main():
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
 
     for fornecedor, script, out_path in SCRAPERS:
+        if EM_CI and fornecedor in FORNECEDORES_SO_LOCAL:
+            print(
+                f"\n[{fornecedor}] pulado no GitHub Actions — WAF da Bransales bloqueia IP "
+                "de datacenter com reCAPTCHA (confirmado 14/jul/2026, ver debug_bransales_falha.html). "
+                "Não é quebra real, não dispara alerta. Rodar local (IP residencial) quando precisar "
+                "dado fresco desse fornecedor.",
+                file=sys.stderr,
+            )
+            continue
+
         status, produtos = rodar_scraper(fornecedor, script, out_path)
 
         if status == "erro":
