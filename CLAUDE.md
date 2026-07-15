@@ -29,11 +29,18 @@ RADAR (pncp_radar.py)
     → Filtra por palavras-chave: pneu, pneumático, pneus
     → Envia email com resumo diário
 
-ANÁLISE DO EDITAL (analisa_edital.py)
+ANÁLISE DO EDITAL — Camada 1 (analisa_edital.py)
     → Baixa documentos via API PNCP
     → Extrai: itens, medidas, especificações técnicas, critérios de habilitação
     → Claude gera JSON estruturado
     → Escreve card no Kanban Notion (via REST API ou MCP)
+    → Card sinaliza "evoluir_parecer_juridico" (sim/não + motivo) — nunca chama a Camada 2 sozinho
+
+PARECER JURÍDICO — Camada 2 (parecer_juridico.py, script separado, 15/jul/2026)
+    → Só roda manualmente, decisão do usuário (mesmo sem recomendação "sim" da Camada 1)
+    → Lê analise_{cnpj}_{ano}_{seq}.json (saída da Camada 1) + arsenal_juridico.md inteiro
+    → Gera recomendações ARS-XX, cada uma com "baseado_em" (campo da Camada 1) + confiança
+    → Escreve seção própria no card, sem tocar no restante gerado pela Camada 1
 
 COTAÇÃO DE DISTRIBUIDORES (scrapers por distribuidor)
     → bransales_scraper.py — Bransales Atacadista
@@ -174,7 +181,7 @@ Frete               = cotação manual pós-análise
 | TCE-CE municípios | https://municipios-licitacoes.tce.ce.gov.br |
 | SEPOG Fortaleza | compras.sepog.fortaleza.ce.gov.br |
 
-**Limitação conhecida:** PNCP tem WAF que bloqueia requests automatizados sem delay. pncp_radar.py já inclui rate limiting.
+**Limitação conhecida:** PNCP tem WAF que bloqueia requests automatizados sem delay. pncp_radar.py já inclui rate limiting e, desde 15/jul/2026, ciclo de retry (10 tentativas → email de instabilidade 1x → repete a cada 30min até conseguir).
 
 **Limitação ComprasNet:** documentos de fornecedores (proposta, marca, habilitação submetida) requerem login autenticado. URLs públicas retornam 404.
 
@@ -317,7 +324,7 @@ Depois que o usuário preenche "📊 Análise do Leilão" de um card com o resul
 6. Ao detectar novo edital relevante: apresentar tabela de breakdown (itens, valores, risco) antes de propor ação
 7. **`analisa_edital.py` nunca pode alucinar (regra travada em código, 09/jul/2026):** todo documento do edital deve ser aberto e lido independente do formato (pdf/docx/txt/html/fallback best-effort — nunca pular arquivo em silêncio). Se a extração ficar abaixo de `LIMIAR_CHARS_CONFIAVEIS` (500 chars confiáveis), o processo levanta `ExtracaoInsuficiente` e **para antes de chamar Claude ou escrever no Notion** — nunca gerar análise sem base documental real. Não relaxar esse limiar nem contornar a trava sem pedido explícito. **Mesma regra vale pro `cabecalho.valor_total`:** nunca confiar em texto livre do documento (já variou entre chamadas pro mesmo edital) — usar `valorTotalEstimado` da API do PNCP via `api/consulta/v1` (não `api/pncp/v1`, que retorna esse campo sempre `None`) quando disponível. Divergência vs soma dos itens vira alerta bloqueante no card, nunca é resolvida escolhendo um número sozinho (ver `validar_valor_total()`).
 8. **Testar mudança nesse pipeline só manualmente, 1 ferramenta por vez** — usuário decidiu (09/jul/2026) não automatizar o fluxo completo (buscar edital → card → análise → precificação) ainda. Rodar uma etapa, parar, esperar feedback antes de encadear a próxima.
-9. **Formato do card de análise (com coluna Produto + docs anexados) é padrão aprovado (09/jul/2026)** — não redesenhar sem pedido explícito novo. Estrutura fixa: ANÁLISE DE EDITAL → DOCUMENTOS USADOS NA ANÁLISE → HABILITAÇÃO → PRODUTOS (com coluna Produto) → PONTOS-CHAVE → LEILÃO → DOCUMENTOS DA PROPOSTA. Mudanças futuras devem ser aditivas/corretivas (bug), não redesign.
+9. **Formato do card de análise (com coluna Produto + docs anexados) é padrão aprovado (09/jul/2026)** — não redesenhar sem pedido explícito novo. Estrutura fixa: ANÁLISE DE EDITAL (com callout "🧭 PRÓXIMO PASSO" sinalizando evoluir_parecer_juridico, 15/jul/2026) → DOCUMENTOS USADOS NA ANÁLISE → HABILITAÇÃO → PRODUTOS (com coluna Produto) → PONTOS-CHAVE → LEILÃO → DOCUMENTOS DA PROPOSTA → PARECER JURÍDICO (⚖️, Camada 2, só existe se `parecer_juridico.py` rodou — seção aditiva, própria, não redesenha as anteriores). Mudanças futuras devem ser aditivas/corretivas (bug), não redesign.
 10. **Ciclo de Aprendizado segue processo fixo de 6 passos** (ver §15.6) — sempre mostrar rascunho e esperar confirmação antes de escrever no Notion.
 11. **Manter README.md, este arquivo e a descrição das ferramentas no Notion sincronizados com o código** — toda vez que um bug for corrigido ou uma feature mudar comportamento, atualizar a documentação relevante no mesmo momento, não depois. Motivo: usuário já foi pego de surpresa por ferramenta com bug que "voltou" — documentação desatualizada é o mesmo risco.
 12. **Arquitetura "1 dono só por fato" (fixada 09/jul/2026):** cada informação vive em exatamente 1 lugar canônico — `README.md` (setup/estrutura/scripts), `CLAUDE.md` (regras operacionais, negócio, processo), memória do assistente (feedback/decisão, só ponteiro pros dois acima quando o fato já existe ali) e Notion (estado vivo de cada processo/edital). Nunca copiar o mesmo fato em 2 lugares — se precisar citar, linkar/referenciar. A trava real que sustenta isso: toda memória LICIT tem uma entrada dizendo pra sempre ler este arquivo primeiro (ver memória `feedback_licit_sempre_ler_claudemd`), já que CLAUDE.md não é carregado automaticamente fora do repo. Política completa documentada no Notion (página "Arquitetura de Documentação — LICIT").

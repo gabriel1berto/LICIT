@@ -312,6 +312,16 @@ copiado do documento + nome do arquivo de origem (ex: "fonte": "\\"pagamento em 
 Sem trecho literal encontrado → o subcampo fica null, nunca inferir ou completar com "conforme edital"/"conforme TR" \
 (mesma regra de prazo_entrega/prazo_pagamento acima). Isso é dado factual extraído, não julgamento — \
 julgamento/recomendação NÃO pertence a este JSON, é outra camada, separada, gerada depois.
+- Bloco "evoluir_parecer_juridico": decide SE vale a pena rodar a Camada 2 (parecer jurídico completo, \
+script separado) pra este edital — não é o parecer em si, só a recomendação de prosseguir ou não. \
+"recomendado"=true quando QUALQUER um: (a) arsenal.srp.eh_srp=true (ata de longo prazo — toda a Fase C \
+do arsenal jurídico passa a valer); (b) arsenal.tem_matriz_riscos=true; (c) valor_total do edital acima \
+de ~R$50.000 (justifica investir tempo em estratégia jurídica); (d) existe alerta bloqueante que \
+dependa de tese jurídica (cláusula abusiva, ausência de critério de pagamento/reajuste, exigência sem \
+amparo legal) — não alerta puramente operacional (tipo "solicitar laudo ao fornecedor"). \
+"motivo" cita explicitamente qual desses critérios bateu, em 1 frase objetiva. Sem nenhum critério \
+batendo, "recomendado"=false e o motivo diz que os benefícios ME/EPP padrão (empate ficto, regularização \
+tardia) seguem valendo independente do parecer, mas o edital é simples demais pra justificar a camada extra.
 """
 
 PROMPT_ESTRUTURA = """\
@@ -402,7 +412,11 @@ PROMPT_ESTRUTURA = """\
     {"documento": "Atestado de Capacidade Técnica", "status": "❌ Não possui"},
     {"documento": "Laudo INMETRO por item", "status": "❌ Solicitar ao fornecedor"},
     {"documento": "Declarações (edital)", "status": "🔄 Gerar por pregão"}
-  ]
+  ],
+  "evoluir_parecer_juridico": {
+    "recomendado": true,
+    "motivo": "SRP com vigência de 1 ano — Fase C inteira (revisão de preço, liberação, cadastro de reserva) passa a valer."
+  }
 }
 """
 
@@ -662,6 +676,16 @@ def build_blocks(a: dict, doc_blocks: list | None = None) -> list:
         [["✅", x] for x in al["vantagens"]]
     )
     bl.append(b_table(["", ""], alert_rows))
+
+    # ── PRÓXIMO PASSO — evoluir pro parecer jurídico? (Camada 2, script separado) ──
+    evoluir = a.get("evoluir_parecer_juridico")
+    if evoluir:
+        emoji = "⚖️ Recomendado" if evoluir.get("recomendado") else "⏭️ Não recomendado agora"
+        bl.append(b_callout(
+            f"Parecer jurídico (Camada 2): {emoji} — {evoluir.get('motivo', '')}\n"
+            f"Rodar manualmente: python parecer_juridico.py analise_<cnpj>_<ano>_<seq>.json <notion_id>",
+            "🧭"
+        ))
 
     if doc_blocks:
         bl.extend(doc_blocks)

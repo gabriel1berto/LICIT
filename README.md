@@ -7,6 +7,9 @@ Venda de pneus para licitações públicas (pregão eletrônico e dispensa eletr
 ```
 RADAR (pncp_radar.py)              → email diário com edital novo publicado no PNCP
 ANÁLISE DE EDITAL (analisa_edital.py) → baixa docs do PNCP, Claude extrai critérios → card Notion
+                                       → card recomenda (ou não) evoluir pro parecer jurídico
+PARECER JURÍDICO (parecer_juridico.py) → Camada 2, manual, só se recomendado — lê arsenal_juridico.md
+                                       + fatos da Camada 1, gera recomendações ARS-XX no card
 COTAÇÃO (*_scraper.py)             → busca preço em cada distribuidor
 PRECIFICAÇÃO (preencher_planilha_precificacao.py) → planilha Sheets (modelo no Drive)
 HABILITAÇÃO                        → checklist de documentação da empresa (Notion)
@@ -20,11 +23,19 @@ Contexto completo do negócio (riscos, fórmulas, habilitação, Notion): `CLAUD
 
 ```
 licit/
-├── pncp_radar.py            Radar diário — busca edital novo no PNCP, envia email
-├── analisa_edital.py        Baixa edital via API PNCP (pdf/docx/txt/html), Claude extrai JSON → card Notion.
+├── pncp_radar.py            Radar diário — busca edital novo no PNCP, envia email. Resiliente a queda:
+│                            ciclo de 10 tentativas, se falhar avisa por email (1x) e repete a cada
+│                            30min até conseguir (job do GH Actions com budget de tempo maior pra isso)
+├── analisa_edital.py        Camada 1. Baixa edital via API PNCP (pdf/docx/txt/html), Claude extrai JSON → card Notion.
 │                            Trava (ExtracaoInsuficiente) se o documento não puder ser lido com confiança —
 │                            nunca analisa sem base documental real. Usa valorTotalEstimado oficial do PNCP
 │                            (api/consulta/v1), não o texto livre. Anexa os documentos originais no card.
+│                            Card inclui recomendação "evoluir_parecer_juridico" (sim/não + motivo) —
+│                            não chama a Camada 2 sozinho, só sinaliza se vale a pena rodar.
+├── parecer_juridico.py      Camada 2, script SEPARADO — só roda manualmente, nunca encadeado pela Camada 1.
+│                            Lê analise_{cnpj}_{ano}_{seq}.json (saída da Camada 1) + arsenal_juridico.md
+│                            inteiro, gera recomendações ARS-XX (cada uma com baseado_em + confiança),
+│                            escreve seção própria no card. Nunca presume fato com "fonte": null da Camada 1.
 ├── bransales_scraper.py     Cotação — Bransales Atacadista
 ├── cantu_scraper.py         Cotação — Cantu / SpeedMax B2B
 ├── gp_scraper.py            Cotação — GP Fácil (cookies exportados — reCAPTCHA bloqueia login direto)
