@@ -157,17 +157,19 @@ def _extrair_arquivo(nome: str, content: bytes) -> tuple[bool, str]:
     return _extrair_bruto_best_effort(nome, content)
 
 
-def baixar_documentos(cnpj: str, ano: int, seq: int) -> tuple[str, list[tuple[str, bytes]]]:
-    """Retorna (texto_concatenado, arquivos_reais) — arquivos_reais é a lista de
-    (nome, bytes) de todo documento individual baixado (não o zip container),
-    pra poder anexar na página Notion depois (documentos usados na análise)."""
+def baixar_documentos(cnpj: str, ano: int, seq: int) -> tuple[str, list[tuple[str, bytes]], list[tuple[str, str]]]:
+    """Retorna (texto_concatenado, arquivos_reais, textos_por_arquivo).
+    arquivos_reais é a lista de (nome, bytes) de todo documento individual baixado
+    (não o zip container), pra poder anexar na página Notion depois. textos_por_arquivo
+    é (nome, texto_extraido) por arquivo — usado por localizar_secoes_criticas() pro
+    pré-scan (Etapa 2), separado do texto_concatenado que vai pro prompt do Claude."""
     seq_s = f"{seq:06d}"
     try:
         arquivos = pncp_get(f"{cnpj}/compras/{ano}/{seq_s}/arquivos")
     except Exception as e:
         raise ExtracaoInsuficiente(f"Falha ao listar arquivos do PNCP: {e}")
 
-    resultados     = []  # lista de (ok: bool, texto: str)
+    resultados     = []  # lista de (nome: str, ok: bool, texto: str)
     arquivos_reais = []  # lista de (nome, bytes) — pra upload no Notion
     for arq in arquivos:
         titulo = arq.get("titulo") or arq.get("nome") or "documento"
@@ -179,10 +181,10 @@ def baixar_documentos(cnpj: str, ano: int, seq: int) -> tuple[str, list[tuple[st
             r = requests.get(url, timeout=60)
         except Exception as e:
             print(f"    erro: {e}", file=sys.stderr)
-            resultados.append((False, f"=== {titulo} — falha de download: {e} ==="))
+            resultados.append((titulo, False, f"=== {titulo} — falha de download: {e} ==="))
             continue
         if r.status_code != 200:
-            resultados.append((False, f"=== {titulo} — HTTP {r.status_code} ==="))
+            resultados.append((titulo, False, f"=== {titulo} — HTTP {r.status_code} ==="))
             continue
         if r.content[:4] == b"PK\x03\x04":
             # ZIP (ou .docx, que também é um zip por dentro) — abre e lê TODO
@@ -192,13 +194,14 @@ def baixar_documentos(cnpj: str, ano: int, seq: int) -> tuple[str, list[tuple[st
                 nomes_zip = z.namelist()
             except zipfile.BadZipFile:
                 print(f"    ZIP inválido: {titulo}", file=sys.stderr)
-                resultados.append((False, f"=== {titulo} — ZIP inválido/corrompido ==="))
+                resultados.append((titulo, False, f"=== {titulo} — ZIP inválido/corrompido ==="))
                 continue
             # .docx é ele mesmo um zip (word/document.xml etc.) — se o titulo já
             # aponta pra um .docx, trata o download inteiro como esse arquivo,
             # não como container de outros documentos.
             if titulo.lower().endswith(".docx") and any(n.startswith("word/") for n in nomes_zip):
-                resultados.append(_extrair_docx(titulo, r.content))
+                ok, texto = _extrair_docx(titulo, r.content)
+                resultados.append((titulo, ok, texto))
                 arquivos_reais.append((titulo, r.content))
                 continue
             for nome in nomes_zip:
@@ -206,14 +209,16 @@ def baixar_documentos(cnpj: str, ano: int, seq: int) -> tuple[str, list[tuple[st
                     continue
                 print(f"    └ {nome}", file=sys.stderr)
                 conteudo = z.read(nome)
-                resultados.append(_extrair_arquivo(nome, conteudo))
+                ok, texto = _extrair_arquivo(nome, conteudo)
+                resultados.append((nome, ok, texto))
                 arquivos_reais.append((nome, conteudo))
         else:
-            resultados.append(_extrair_arquivo(titulo, r.content))
+            ok, texto = _extrair_arquivo(titulo, r.content)
+            resultados.append((titulo, ok, texto))
             arquivos_reais.append((titulo, r.content))
 
-    chars_confiaveis = sum(len(t) for ok, t in resultados if ok)
-    n_ok             = sum(1 for ok, _ in resultados if ok)
+    chars_confiaveis = sum(len(t) for _, ok, t in resultados if ok)
+    n_ok             = sum(1 for _, ok, _ in resultados if ok)
     if n_ok == 0 or chars_confiaveis < LIMIAR_CHARS_CONFIAVEIS:
         raise ExtracaoInsuficiente(
             f"Extração insuficiente pra confiar: {n_ok} documento(s) lido(s) com sucesso, "
@@ -221,7 +226,66 @@ def baixar_documentos(cnpj: str, ano: int, seq: int) -> tuple[str, list[tuple[st
             f"Analisar sem base documental real geraria alucinação — processo interrompido de propósito."
         )
 
-    return "\n\n".join(t for _, t in resultados), arquivos_reais
+    texto_concatenado  = "\n\n".join(t for _, _, t in resultados)
+    textos_por_arquivo = [(nome, t) for nome, _, t in resultados]
+    return texto_concatenado, arquivos_reais, textos_por_arquivo
+
+
+# ─── PRÉ-SCAN DE SEÇÕES CRÍTICAS ────────────────────────────────────────────────
+# Cláusula de pagamento/reajuste/SRP costuma morar na minuta de contrato/ata (anexo,
+# não o corpo principal do edital) — se isso cair depois do limite de MAX_TEXT_CHARS
+# na concatenação, vira null falso no Claude (pior resultado possível: parece que o
+# edital não tem a cláusula, quando só não coube no contexto). Trechos críticos
+# entram PRIMEIRO no contexto (ver analisar()), garantindo que nunca são truncados.
+
+JANELA_SECAO_CRITICA = 1500  # chars pra cada lado do match
+
+TERMOS_CRITICOS_NOMEADOS = {
+    "pagamento":              re.compile(r"pagamento", re.IGNORECASE),
+    "atualização financeira": re.compile(r"atualiza[çc][ãa]o financeira", re.IGNORECASE),
+    "reajuste":               re.compile(r"reajust", re.IGNORECASE),
+    "registro de preços":     re.compile(r"registro de pre[çc]os", re.IGNORECASE),
+    "quantidade mínima":      re.compile(r"quantidade m[íi]nima", re.IGNORECASE),
+    "ordem de fornecimento":  re.compile(r"ordem de fornecimento", re.IGNORECASE),
+    "matriz de risco":        re.compile(r"matriz de risco", re.IGNORECASE),
+}
+
+
+def localizar_secoes_criticas(textos_por_arquivo: list[tuple[str, str]]) -> tuple[list[str], set[str]]:
+    """Retorna (trechos_marcados_com_arquivo_origem, nomes_de_termo_encontrados).
+    Varre TODOS os arquivos extraídos (mesmo os não-confiáveis — um trecho de
+    pagamento vale a pena mostrar pro Claude mesmo se o resto do arquivo é ruim;
+    a trava de confiabilidade geral continua em ExtracaoInsuficiente, intocada)."""
+    trechos = []
+    vistos_inicio = set()
+    termos_encontrados: set[str] = set()
+
+    for termo_nome, termo_re in TERMOS_CRITICOS_NOMEADOS.items():
+        for nome_arquivo, texto in textos_por_arquivo:
+            for m in termo_re.finditer(texto):
+                termos_encontrados.add(termo_nome)
+                ini = max(0, m.start() - JANELA_SECAO_CRITICA)
+                fim = min(len(texto), m.end() + JANELA_SECAO_CRITICA)
+                chave = (nome_arquivo, ini)  # dedup — mesmo trecho pode bater 2+ termos próximos
+                if chave in vistos_inicio:
+                    continue
+                vistos_inicio.add(chave)
+                trechos.append(f"=== TRECHO CRÍTICO ({termo_nome} — {nome_arquivo}) ===\n{texto[ini:fim]}")
+
+    return trechos, termos_encontrados
+
+
+def avisos_termos_ausentes(termos_encontrados: set[str], eh_srp: bool) -> list[str]:
+    """Termo crítico esperado (pagamento/reajuste/SRP) que não apareceu em NENHUM
+    documento baixado, quando o processo é SRP — sinal de que a cláusula pode estar
+    num anexo que não baixou/não foi lido, não necessariamente que o edital não tem."""
+    if not eh_srp:
+        return []
+    return [
+        f"cláusula '{termo_nome}' não localizada nos documentos baixados"
+        for termo_nome in TERMOS_CRITICOS_NOMEADOS
+        if termo_nome not in termos_encontrados
+    ]
 
 # ─── PROMPT ───────────────────────────────────────────────────────────────────
 
@@ -243,6 +307,11 @@ Esse campo decide em qual fornecedor/categoria a cotação vai buscar depois —
 - catmat: código numérico do CATMAT/SIASG se presente no documento. Se não encontrar, use "".
 - habilitacao: máximo 80 chars por campo. Use abreviações: RFB+PGFN, FGTS, CNDT, Est.+Mun., doc. adm., CC/CCMEI. \
 Se não houver exigência, escreva "Sem exigência". Não use frases completas.
+- Bloco "arsenal" (fatos, não opinião): cada subcampo preenchido EXIGE "fonte" com o trecho literal \
+copiado do documento + nome do arquivo de origem (ex: "fonte": "\\"pagamento em até 30 dias...\\" — Termo de Referência.pdf"). \
+Sem trecho literal encontrado → o subcampo fica null, nunca inferir ou completar com "conforme edital"/"conforme TR" \
+(mesma regra de prazo_entrega/prazo_pagamento acima). Isso é dado factual extraído, não julgamento — \
+julgamento/recomendação NÃO pertence a este JSON, é outra camada, separada, gerada depois.
 """
 
 PROMPT_ESTRUTURA = """\
@@ -270,6 +339,16 @@ PROMPT_ESTRUTURA = """\
     "via_sicaf": true,
     "exige_balanco": false,
     "prazo_docs_externos": "2h"
+  },
+  "arsenal": {
+    "pagamento": {"prazo_dias": null, "gatilho": null, "criterio_atualizacao": null, "fonte": null},
+    "entrega":   {"prazo_of_dias": null, "contagem": null, "fonte": null},
+    "srp": {
+      "eh_srp": false, "vigencia_meses": null,
+      "quantitativo_maximo_por_item": {}, "permite_cotacao_parcial": null,
+      "regulamento_srp": null, "hipoteses_cancelamento_no_edital": null, "fonte": null
+    },
+    "tem_matriz_riscos": false
   },
   "specs_comuns": "Novo · Radial · INMETRO · ...",
   "itens": [
@@ -327,12 +406,18 @@ PROMPT_ESTRUTURA = """\
 }
 """
 
-def analisar(texto: str, metadados: dict, itens_api: list) -> dict:
+def analisar(texto: str, metadados: dict, itens_api: list, trechos_criticos: list[str] | None = None) -> dict:
     cliente = anthropic.Anthropic()
+    # Trechos críticos (pré-scan, ver localizar_secoes_criticas) entram ANTES do texto
+    # geral — se a concatenação total passar de MAX_TEXT_CHARS, o corte no final nunca
+    # derruba pagamento/reajuste/SRP, só o texto geral menos prioritário.
+    bloco_criticos = ("\n\n".join(trechos_criticos) + "\n\n") if trechos_criticos else ""
+    texto_priorizado = bloco_criticos + texto
     contexto = (
         f"METADADOS PNCP:\n{json.dumps(metadados, ensure_ascii=False)}\n\n"
         f"ITENS (API):\n{json.dumps(itens_api, ensure_ascii=False)}\n\n"
-        f"TEXTO DOS DOCUMENTOS:\n{texto[:MAX_TEXT_CHARS]}"
+        f"TEXTO DOS DOCUMENTOS (trechos críticos de pagamento/reajuste/SRP priorizados "
+        f"no início, nunca truncados):\n{texto_priorizado[:MAX_TEXT_CHARS]}"
     )
     resp = cliente.messages.create(
         model=CLAUDE_MODEL,
@@ -389,6 +474,17 @@ def validar_valor_total(analise: dict, valor_oficial_pncp: float | None) -> None
         print(f"  ⚠ valor_total do Claude ({valor_claude}) diverge da soma dos itens "
               f"({_fmt_valor_brl(soma_itens)}) e não há valor oficial do PNCP pra desempatar — "
               f"mantendo o do Claude, mas desconfiar.", file=sys.stderr)
+
+
+def propagar_beneficio_me_epp(analise: dict, itens_api: list) -> None:
+    """tipo_beneficio (ME/EPP exclusivo, cota reservada, ampla concorrência) vem
+    estruturado da api/pncp/v1 junto com os itens — mesma hierarquia do
+    valorTotalEstimado (validar_valor_total acima): dado oficial da API nunca é
+    decidido/inferido pelo texto livre do Claude, por isso nem entra no prompt de
+    extração. Casa por número do item (Claude usa "numero", API usa "numeroItem")."""
+    beneficio_por_numero = {it.get("numeroItem"): it.get("tipoBeneficioNome") for it in itens_api}
+    for item in analise.get("itens", []):
+        item["beneficio_me_epp"] = beneficio_por_numero.get(item.get("numero"))
 
 # ─── NOTION — HELPERS ─────────────────────────────────────────────────────────
 
@@ -681,17 +777,27 @@ def main():
     # 2. Documentos
     print("📄 Baixando documentos...", file=sys.stderr)
     try:
-        texto, arquivos_reais = baixar_documentos(cnpj, ano, seq)
+        texto, arquivos_reais, textos_por_arquivo = baixar_documentos(cnpj, ano, seq)
     except ExtracaoInsuficiente as e:
         print(f"\n❌ ERRO — processo interrompido: {e}", file=sys.stderr)
         print("   Nenhuma chamada ao Claude foi feita. Nenhuma escrita no Notion foi feita.", file=sys.stderr)
         sys.exit(2)
     print(f"   {len(texto):,} chars extraídos de {pncp_arg}", file=sys.stderr)
 
+    # 2b. Pré-scan de seções críticas (pagamento/reajuste/SRP) — Etapa 2
+    trechos_criticos, termos_encontrados = localizar_secoes_criticas(textos_por_arquivo)
+    avisos = avisos_termos_ausentes(termos_encontrados, bool(metadados.get("srp")))
+    print(f"   🔍 pré-scan: {len(trechos_criticos)} trecho(s) crítico(s) achado(s)", file=sys.stderr)
+    for aviso in avisos:
+        print(f"   ⚠ {aviso}", file=sys.stderr)
+
     # 3. Claude
     print("🤖 Analisando com Claude...", file=sys.stderr)
-    analise = analisar(texto, metadados, itens_api)
+    analise = analisar(texto, metadados, itens_api, trechos_criticos)
     validar_valor_total(analise, metadados_oficial.get("valorTotalEstimado"))
+    propagar_beneficio_me_epp(analise, itens_api)
+    if avisos:
+        analise["avisos_prescan"] = avisos
     print(f"   {len(analise['itens'])} itens · {analise['cabecalho']['valor_total']}", file=sys.stderr)
 
     # 4. Saída
