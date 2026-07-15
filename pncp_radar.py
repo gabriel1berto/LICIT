@@ -53,6 +53,13 @@ MAX_RETRIES          = 5     # tentativas por request — 07/jul/26: subiu de 2 
                               # genérica o dia inteiro, timeout puro em todo endpoint testado, não é bloqueio de
                               # IP). Job tem 30min de budget (.yml), sobra folga — 2 desistia cedo demais.
 
+# 15/jul/26: camada extra acima do MAX_RETRIES por-request — cobre queda mais longa
+# do PNCP (o request-level já tenta 5x com backoff curto; isso aqui repete a coleta
+# inteira). Ciclo de 10 tentativas falhou -> avisa por email 1x -> espera 30min ->
+# tenta os 10 de novo -> repete até conseguir (limitado só pelo timeout do job/.yml).
+MAX_TENTATIVAS_ACESSO = 10
+INTERVALO_RETRY_MIN   = 30
+
 HEADERS = {
     "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
     "Accept":          "application/json, text/plain, */*",
@@ -590,6 +597,38 @@ def build_html(yesterday_items: list[dict], expiring_items: list[dict]) -> str:
 
 # ── EMAIL ──────────────────────────────────────────────────────────────────────
 
+def send_instability_email() -> None:
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"></head>
+<body style="font-family:Arial,Helvetica,sans-serif;padding:24px;color:#2c3e50;">
+  <h2 style="color:#c0392b;">⚠️ PNCP Radar — instabilidade no acesso aos dados</h2>
+  <p>Depois de {MAX_TENTATIVAS_ACESSO} tentativas, não foi possível acessar a API do PNCP
+  (queda do servidor, WAF ou instabilidade momentânea).</p>
+  <p>O job vai continuar tentando em ciclos de {MAX_TENTATIVAS_ACESSO} tentativas a cada
+  {INTERVALO_RETRY_MIN} minutos, em silêncio, até conseguir — este é o único aviso
+  desta execução.</p>
+  <p style="color:#888;font-size:12px;">Gerado automaticamente em {datetime.now(BRT).strftime('%d/%m/%Y %H:%M')} (BRT).</p>
+</body></html>"""
+    send_email(html, "⚠️ PNCP Radar — instabilidade no acesso ao PNCP")
+
+
+def collect_with_retries(max_tentativas: int = MAX_TENTATIVAS_ACESSO) -> list[dict] | None:
+    """Tenta coletar todos os processos abertos (todas modalidades). Retorna None
+    se todas as `max_tentativas` falharem — chamador decide o que fazer (esperar e
+    tentar de novo, avisar por email, etc)."""
+    for tentativa in range(1, max_tentativas + 1):
+        try:
+            items: list[dict] = []
+            for mod in MODALIDADES:
+                items.extend(collect_all_open(mod))
+            return items
+        except RuntimeError as e:
+            print(f"  ciclo de acesso {tentativa}/{max_tentativas} falhou: {e}")
+            if tentativa < max_tentativas:
+                time.sleep(10 * tentativa)
+    return None
+
+
 def send_email(html: str, subject: str) -> None:
     gmail_user = os.environ["GMAIL_USER"]
     gmail_pass = os.environ["GMAIL_APP_PASSWORD"]
@@ -614,17 +653,21 @@ def send_email(html: str, subject: str) -> None:
 def main() -> None:
     yesterday_str = (datetime.now(BRT) - timedelta(days=1)).strftime("%d/%m")
 
-    # 1. Coleta todos os processos abertos
+    # 1. Coleta todos os processos abertos — ciclos de MAX_TENTATIVAS_ACESSO tentativas;
+    #    se um ciclo inteiro falhar, avisa por email (1x) e espera INTERVALO_RETRY_MIN
+    #    antes do próximo ciclo, repetindo até conseguir (limitado pelo timeout do job).
     print("Coletando processos abertos...")
-    all_items: list[dict] = []
-    try:
-        for mod in MODALIDADES:
-            all_items.extend(collect_all_open(mod))
-    except RuntimeError as e:
-        print(f"\n⚠️  PNCP inacessível: {e}")
-        print("Possíveis causas: queda do servidor, bloqueio de IP ou WAF.")
-        print("Tente novamente em alguns minutos ou aguarde até amanhã.")
-        return
+    all_items: list[dict] | None = None
+    aviso_enviado = False
+    while all_items is None:
+        all_items = collect_with_retries()
+        if all_items is None:
+            print(f"\n⚠️  PNCP inacessível após {MAX_TENTATIVAS_ACESSO} tentativas.")
+            if not aviso_enviado:
+                send_instability_email()
+                aviso_enviado = True
+            print(f"Aguardando {INTERVALO_RETRY_MIN}min pra novo ciclo de tentativas...")
+            time.sleep(INTERVALO_RETRY_MIN * 60)
 
     print(f"Total abertos: {len(all_items)}")
 

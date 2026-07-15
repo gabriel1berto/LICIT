@@ -8,7 +8,8 @@ on:
 jobs:
   radar:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 350   # 15/jul/26: cobre ciclos de retry (10 tentativas + espera 30min) até
+                            # conseguir acesso ao PNCP — GH Actions trava hard em 360min/job de qualquer forma
 
     steps:
       - name: Checkout
