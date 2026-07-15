@@ -9,8 +9,10 @@ from dashboard_common import carregar_cotacao_master, fundo_transparente
 
 st.title("📍 Preço Atual")
 st.caption(
-    "Cotação diária direta nos 4 distribuidores já cadastrados (Bransales, Cantu, GP Fácil, "
-    "PneuGreen) — schema `cotacao_fornecedor`, pipeline separado do mercado PNCP."
+    "Cotação diária direta nos distribuidores já cadastrados (Bransales, Cantu, GP Fácil, "
+    "PneuGreen, Della Via) — schema `cotacao_fornecedor`, pipeline separado do "
+    "mercado PNCP. Cada fornecedor pode ter rodado num dia diferente — a comparação usa a "
+    "última cotação de cada um, não só o dia mais recente combinado."
 )
 
 cm = carregar_cotacao_master()
@@ -25,11 +27,18 @@ medidas_disp = sorted(cm["medida"].unique())
 medida_sel = st.selectbox("Medida:", medidas_disp, key="medida_preco_atual")
 cmm = cm[cm["medida"] == medida_sel]
 
-ultima_data = cmm["data"].max()
-atual = cmm[cmm["data"] == ultima_data].sort_values("preco")
+# Última cotação de CADA fornecedor, não "só o dia mais recente combinando todos" —
+# achado real 15/jul/26: fornecedor novo (Della Via/Giga) rodando hoje fazia a data
+# global virar hoje, derrubando os 4 fornecedores originais (rodaram ontem) da view
+# inteira pra qualquer medida onde o novo também aparecesse. Cada fornecedor tem seu
+# próprio ciclo de coleta — a comparação certa é "o que cada um cotou por último".
+idx_recente = cmm.groupby("fornecedor")["timestamp"].idxmax()
+atual = cmm.loc[idx_recente].sort_values("preco")
 min_forn = atual.groupby("fornecedor", as_index=False)["preco"].min().sort_values("preco")
 
-st.subheader(f"Mais barato por fornecedor — {ultima_data}")
+datas_por_fornecedor = atual["data"].nunique()
+titulo_data = atual["data"].iloc[0] if datas_por_fornecedor == 1 else "última rodada de cada fornecedor"
+st.subheader(f"Mais barato por fornecedor — {titulo_data}")
 figb = px.bar(
     min_forn, x="preco", y="fornecedor", orientation="h", text="preco",
     labels={"preco": "Preço mínimo (R$)", "fornecedor": ""},
@@ -42,10 +51,10 @@ st.plotly_chart(figb, use_container_width=True)
 st.divider()
 st.subheader("Detalhe completo dessa rodada")
 detalhe = atual[[
-    "fornecedor", "marca", "preco", "confianca_match", "ic", "iv", "treadwear",
+    "fornecedor", "data", "marca", "preco", "confianca_match", "ic", "iv", "treadwear",
     "construcao", "num_lonas", "tipo_terreno", "inmetro", "url",
 ]].rename(columns={
-    "fornecedor": "Fornecedor", "marca": "Marca", "preco": "Preço (R$)",
+    "fornecedor": "Fornecedor", "data": "Data da cotação", "marca": "Marca", "preco": "Preço (R$)",
     "confianca_match": "Confiança", "ic": "IC", "iv": "IV", "treadwear": "Treadwear",
     "construcao": "Construção", "num_lonas": "Nº Lonas", "tipo_terreno": "Terreno",
     "inmetro": "INMETRO", "url": "Link",

@@ -15,6 +15,7 @@ CORES_FORNECEDOR = {
     "Cantu":       PALETA_CATEGORICA_8[1],
     "GP":          PALETA_CATEGORICA_8[2],
     "Green Pneus": PALETA_CATEGORICA_8[3],
+    "Della Via":   PALETA_CATEGORICA_8[4],
 }
 
 st.title("📈 Tendência")

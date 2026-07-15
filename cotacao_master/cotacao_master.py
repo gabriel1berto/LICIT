@@ -5,9 +5,10 @@ mercado por medida, 4 fornecedores já cadastrados, independente de edital).
 
 Fluxo:
   1. Lê medidas_prioritarias.json (raiz do repo) — lista de medida a cotar.
-  2. Roda os 4 scrapers *_master.py SEQUENCIAL (nunca paralelo): Bransales →
-     Cantu → GP → Green. Cada um processa TODOS os itens do arquivo numa só
-     sessão de browser (1 login por fornecedor).
+  2. Roda os 5 scrapers *_master.py SEQUENCIAL (nunca paralelo): Bransales →
+     Cantu → GP → Green → Della Via. Cada um processa TODOS os itens do
+     arquivo numa só sessão de browser (Della Via não precisa login — sem
+     tier de atacado self-service, ver dellavia_scraper_master.py).
   3. Pra cada produto retornado: extrai medida do nome via pneu_medida_matcher
      (reusado de analise/, não duplicado), compara com a medida de referência.
   4. Grava em cotacao_fornecedor.{medidas,aliases_medida,cotacoes} (Supabase).
@@ -55,6 +56,7 @@ SCRAPERS = [
     ("Cantu",       os.path.join(HERE, "cantu_scraper_master.py"),     os.path.join(HERE, "results_master_cantu.json")),
     ("GP",          os.path.join(HERE, "gp_scraper_master.py"),        os.path.join(HERE, "results_master_gp.json")),
     ("Green Pneus", os.path.join(HERE, "green_scraper_master.py"),     os.path.join(HERE, "results_master_green.json")),
+    ("Della Via",   os.path.join(HERE, "dellavia_scraper_master.py"),  os.path.join(HERE, "results_master_dellavia.json")),
 ]
 
 # GITHUB_ACTIONS=true é setado automático pelo runner — nenhum toggle manual

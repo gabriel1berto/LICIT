@@ -115,9 +115,21 @@ na memória). 2 investigações separadas, cada rodada:
 ## Cotação Master (coleta diária de preço, independente de edital)
 
 Pipeline separado do fluxo de cotação por edital (que segue intocado) — cota diariamente as
-medidas de `medidas_prioritarias.json` nos 4 distribuidor já cadastrados, grava histórico no
-schema `cotacao_fornecedor` (mesmo projeto Supabase do mercado PNCP, schema separado — ver
-`schema_cotacoes_diarias.sql`). Visível na aba "💰 Cotação Fornecedor" do dashboard.
+medidas de `medidas_prioritarias.json` nos distribuidores já cadastrados (Bransales, Cantu, GP,
+Green Pneus, Della Via), grava histórico no schema `cotacao_fornecedor` (mesmo projeto Supabase
+do mercado PNCP, schema separado — ver `schema_cotacoes_diarias.sql`). Visível na aba
+"💰 Cotação Fornecedor" do dashboard.
+
+**Giga Pneus removido do grupo (15/jul/2026):** nunca ficou em 1º/2º lugar em nenhuma das 12
+medidas comparadas, sem tier de atacado (testado login + kit de 4 unidades, preço idêntico nos
+2 casos), e perde 100% das vezes pro GP (já ativo). Scraper root (`giga_scraper.py`) continua
+existindo pra cotação por edital pontual, só saiu do pipeline de coleta diária.
+
+**Bug corrigido (15/jul/2026):** a página "Preço Atual" filtrava pela data mais recente
+combinando TODOS os fornecedores — quando um fornecedor novo rodava num dia diferente dos
+outros, a comparação sumia com quem tinha rodado em dia mais antigo (mesmo sendo a cotação
+mais recente daquele fornecedor). Corrigido pra usar a última cotação de CADA fornecedor,
+não o dia mais recente do conjunto (`analise/views/cotacao_preco_atual.py`).
 
 **Automação:** `.github/workflows/cotacao_master.yml`, só `workflow_dispatch` (manual) até
 validar rodagem real — sem cron ainda.
