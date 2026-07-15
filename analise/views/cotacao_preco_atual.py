@@ -42,7 +42,7 @@ st.subheader(f"Mais barato por fornecedor — {titulo_data}")
 figb = px.bar(
     min_forn, x="preco", y="fornecedor", orientation="h", text="preco",
     labels={"preco": "Preço mínimo (R$)", "fornecedor": ""},
-    title=f"{medida_sel} — {ultima_data}",
+    title=f"{medida_sel} — {titulo_data}",
 )
 figb.update_traces(marker_color="#2a78d6", texttemplate="R$ %{text:.2f}", textposition="outside")
 fundo_transparente(figb)
