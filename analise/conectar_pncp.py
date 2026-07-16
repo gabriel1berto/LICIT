@@ -272,13 +272,20 @@ def carregar_editais_abertos() -> pd.DataFrame:
     encerramento no futuro) e pelo menos 1 item eh_pneu=TRUE. Radar de triagem
     (Kanban), não análise de mercado — por isso não passa pelos mesmos tetos de
     valor de carregar_base_pncp() (aqui o volume é baixo, dá pra olhar 1 a 1).
+
+    achado 16/jul/2026 (revisão manual item a item): "Leilão - Eletrônico" é o ÓRGÃO
+    vendendo bens móveis usados (ex: "Alienação de 65 lotes de bens móveis") — pneu
+    aparece só como especificação de um veículo/lote sendo leiloado, não como produto
+    que o LICIT venderia. Direção oposta do negócio (LICIT vende PARA o governo, não
+    compra dele) — excluído por modalidade, não por eh_pneu (o item em si não é
+    "falso positivo" de pneu, é o processo inteiro que não se aplica).
     """
     df = pd.read_sql_query(
         """
         SELECT e.numero_controle_pncp, e.orgao_cnpj, e.ano, e.numero_sequencial,
                e.uf, e.municipio_nome AS municipio, e.orgao_nome, e.modalidade_licitacao_nome,
                d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
-               d.data_encerramento_proposta, d.link_sistema_origem,
+               d.data_encerramento_proposta, d.link_sistema_origem, d.codigo_ibge,
                COUNT(i.numero_item) FILTER (WHERE i.eh_pneu) AS n_itens_pneu,
                STRING_AGG(DISTINCT i.categoria, ', ') FILTER (WHERE i.eh_pneu) AS categorias
         FROM editais e
@@ -288,10 +295,11 @@ def carregar_editais_abertos() -> pd.DataFrame:
           AND d.data_encerramento_proposta IS NOT NULL
           AND d.data_encerramento_proposta::timestamp > now()
           AND i.eh_pneu = TRUE
+          AND e.modalidade_licitacao_nome NOT ILIKE '%%leil%%'
         GROUP BY e.numero_controle_pncp, e.orgao_cnpj, e.ano, e.numero_sequencial, e.uf,
                  e.municipio_nome, e.orgao_nome, e.modalidade_licitacao_nome,
                  d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
-                 d.data_encerramento_proposta, d.link_sistema_origem
+                 d.data_encerramento_proposta, d.link_sistema_origem, d.codigo_ibge
         """,
         ENGINE,
     )
@@ -313,6 +321,7 @@ def carregar_editais_abertos() -> pd.DataFrame:
         "https://pncp.gov.br/app/editais/" + df["orgao_cnpj"] + "/" + df["ano"] + "/" + df["numero_sequencial"]
     )
     df["cnpj_ano_seq"] = df["orgao_cnpj"] + "/" + df["ano"] + "/" + df["numero_sequencial"]
+    df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")
     return df.sort_values("dias_restantes")
 
 

@@ -7,11 +7,12 @@ manual, 1 ferramenta por vez (CLAUDE.md §17.8) — dashboard é público, não 
 pra disparar chamada de API/Claude/Notion sozinho.
 """
 
+import plotly.express as px
 import streamlit as st
 
 from dashboard_common import (
     COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING,
-    carregar_editais_abertos, fmt_abrev,
+    carregar_editais_abertos, carregar_lat_lon, fmt_abrev, fundo_transparente,
 )
 from ui_explicacao import cabecalho_pagina, regra
 
@@ -31,6 +32,9 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "carrega — o cache expira a cada 5min).\n"
         "- Pelo menos 1 item da descrição bate a heurística `eh_pneu_de_verdade()` (mesma "
         "regra da página Análise de mercado).\n\n"
+        "- Modalidade **não é** Leilão — leilão é o órgão vendendo bem usado, não comprando "
+        "(pneu ali é só especificação de um veículo sendo alienado, direção oposta do "
+        "negócio).\n\n"
         "Colunas do Kanban agrupam por dias restantes até o encerramento — quanto mais perto "
         "de 0, mais urgente decidir. Retificação de edital (PNCP gera "
         "`numero_controle_pncp` novo pro mesmo processo) é deduplicada, mantendo a versão "
@@ -52,6 +56,47 @@ BUCKETS = [
     ("🟢", "Depois", "mais de 7 dias", COR_STATUS_GOOD, lambda d: d > 7),
 ]
 
+
+def _bucket_de(dias: float) -> str:
+    for icone, titulo, _, _, cond in BUCKETS:
+        if cond(dias):
+            return f"{icone} {titulo}"
+    return "❔ Sem prazo"
+
+
+editais["bucket_label"] = editais["dias_restantes"].apply(_bucket_de)
+CORES_BUCKET = {f"{icone} {titulo}": cor for icone, titulo, _, cor, _ in BUCKETS}
+
+st.subheader("Onde estão os editais abertos")
+mapa_df = editais.dropna(subset=["codigo_ibge"]).merge(carregar_lat_lon(), on="codigo_ibge", how="left")
+mapa_df = mapa_df.dropna(subset=["latitude", "longitude"])
+if mapa_df.empty:
+    st.info("Sem coordenada de município pra mostrar no mapa nesse filtro.")
+else:
+    zoom = max(3.0, 8.5 - 1.4 * max(
+        mapa_df["latitude"].max() - mapa_df["latitude"].min(),
+        mapa_df["longitude"].max() - mapa_df["longitude"].min(),
+        0.5,
+    ))
+    fig_mapa = px.scatter_mapbox(
+        mapa_df, lat="latitude", lon="longitude", color="bucket_label",
+        category_orders={"bucket_label": list(CORES_BUCKET)},
+        color_discrete_map=CORES_BUCKET,
+        hover_name="orgao_nome",
+        hover_data={"municipio": True, "uf": True, "dias_restantes": ":.1f", "latitude": False, "longitude": False},
+        center={"lat": mapa_df["latitude"].mean(), "lon": mapa_df["longitude"].mean()},
+        zoom=zoom, mapbox_style="carto-darkmatter",
+    )
+    fig_mapa.update_traces(marker=dict(size=12))
+    fig_mapa.update_layout(height=500, margin=dict(l=0, r=0, t=0, b=0), legend_title_text="")
+    fundo_transparente(fig_mapa)
+    st.plotly_chart(fig_mapa, use_container_width=True)
+    st.caption(
+        "Ainda só os editais — ponto de saída dos distribuidores entra depois que a "
+        "localização de cada um for cadastrada no Notion."
+    )
+
+st.divider()
 cols = st.columns(len(BUCKETS))
 for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
     with col:
