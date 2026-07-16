@@ -7,6 +7,8 @@ import streamlit as st
 
 from dashboard_common import carregar_cotacao_master, fundo_transparente
 
+IV_ORDER = {c: i for i, c in enumerate("LMNPQRSTUHVWY")}
+
 st.title("📍 Preço Atual")
 st.caption(
     "Cotação diária direta nos distribuidores já cadastrados (Bransales, Cantu, GP Fácil, "
@@ -27,13 +29,45 @@ medidas_disp = sorted(cm["medida"].unique())
 medida_sel = st.selectbox("Medida:", medidas_disp, key="medida_preco_atual")
 cmm = cm[cm["medida"] == medida_sel]
 
-# Última cotação de CADA fornecedor, não "só o dia mais recente combinando todos" —
-# achado real 15/jul/26: fornecedor novo (Della Via/Giga) rodando hoje fazia a data
-# global virar hoje, derrubando os 4 fornecedores originais (rodaram ontem) da view
-# inteira pra qualquer medida onde o novo também aparecesse. Cada fornecedor tem seu
-# próprio ciclo de coleta — a comparação certa é "o que cada um cotou por último".
-idx_recente = cmm.groupby("fornecedor")["timestamp"].idxmax()
-atual = cmm.loc[idx_recente].sort_values("preco")
+# Última RODADA de cada fornecedor — todas as linhas daquele batch, não só 1 (achado
+# real 15/jul/26, corrigido de novo agora: pegar direto o idxmax do timestamp deixava
+# a escolha de QUAL produto sobra por fornecedor dependendo da ordem de inserção, não
+# de um critério explícito). Filtro de especificação entra ANTES de decidir o mais
+# barato — senão o "mais barato" pode ser um produto que nem bate o critério pedido.
+idx_ultima_rodada = cmm.groupby("fornecedor")["timestamp"].transform("max") == cmm["timestamp"]
+ultima_rodada = cmm[idx_ultima_rodada]
+
+st.subheader("Filtros de especificação")
+col1, col2, col3 = st.columns(3)
+with col1:
+    ic_min = st.number_input("Índice de Carga mínimo", min_value=0, value=0, step=1, key="ic_min_preco_atual")
+with col2:
+    iv_opcoes = [""] + sorted(IV_ORDER, key=IV_ORDER.get)
+    iv_min = st.selectbox("Índice de Velocidade mínimo", iv_opcoes, key="iv_min_preco_atual")
+with col3:
+    construcoes_disp = sorted(ultima_rodada["construcao"].dropna().unique())
+    construcao_sel = st.selectbox("Construção", [""] + construcoes_disp, key="construcao_preco_atual")
+
+filtrado = ultima_rodada.copy()
+if ic_min > 0:
+    filtrado = filtrado[filtrado["ic"] >= ic_min]
+if iv_min:
+    filtrado = filtrado[filtrado["iv"].map(lambda v: IV_ORDER.get(str(v).upper(), -1) >= IV_ORDER[iv_min] if pd.notna(v) else False)]
+if construcao_sel:
+    filtrado = filtrado[filtrado["construcao"] == construcao_sel]
+
+if ic_min > 0 or iv_min or construcao_sel:
+    st.caption(
+        "⚠️ Filtro ativo — produto sem o dado de especificação preenchido é excluído "
+        "(não dá pra confirmar se atende o critério)."
+    )
+
+if filtrado.empty:
+    st.warning("Nenhum produto atende aos filtros de especificação selecionados.")
+    st.stop()
+
+idx_barato = filtrado.groupby("fornecedor")["preco"].idxmin()
+atual = filtrado.loc[idx_barato].sort_values("preco")
 min_forn = atual.groupby("fornecedor", as_index=False)["preco"].min().sort_values("preco")
 
 datas_por_fornecedor = atual["data"].nunique()

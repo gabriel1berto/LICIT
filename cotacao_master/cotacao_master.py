@@ -71,17 +71,32 @@ GP_COOKIE_EXPIRADO_MSG = "Cookies expirados ou inválidos"
 
 MAX_TENTATIVAS  = 3
 DELAY_RETRY_SEG = 30
+# 30min bastava pra 15 medidas — achado real 16/jul/26: com 30 medidas (dobrou a lista
+# de medidas_prioritarias.json) o Cantu sozinho estourou 1800s e derrubou o processo
+# inteiro (TimeoutExpired não tratado). 1h de folga por tentativa.
+TIMEOUT_SCRAPER_SEG = 3600
 
 
 def _rodar_uma_vez(nome: str, script: str, out_path: str) -> tuple[str, list[dict]]:
     """1 tentativa isolada. Retorna (status, produtos). status: 'ok' | 'esperado_gp_cookie' | 'erro'."""
-    result = subprocess.run(
-        [sys.executable, script, MEDIDAS_CFG, out_path],
-        cwd=HERE,
-        capture_output=True,
-        text=True,
-        timeout=1800,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, script, MEDIDAS_CFG, out_path],
+            cwd=HERE,
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SCRAPER_SEG,
+        )
+    except subprocess.TimeoutExpired as e:
+        # Achado real 16/jul/26: TimeoutExpired não tratado derrubava o processo
+        # INTEIRO (uncaught exception) — 1 fornecedor lento (30 medidas dobrou o
+        # trabalho de 15) impedia os fornecedores seguintes de sequer tentar rodar.
+        # Trata como falha normal (retry-able), igual qualquer outro erro de scraper.
+        if e.stderr:
+            sys.stderr.write(e.stderr if isinstance(e.stderr, str) else e.stderr.decode(errors="replace"))
+        print(f"[{nome}] estourou timeout de {TIMEOUT_SCRAPER_SEG}s", file=sys.stderr)
+        return "erro", []
+
     sys.stderr.write(result.stderr)
 
     if result.returncode != 0:
