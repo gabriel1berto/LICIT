@@ -54,15 +54,20 @@ licit/
 │   ├── coletor_pncp.py         Fase 1 — descobre editais (API de busca), grava em Postgres
 │   ├── coletor_pncp_detalhe.py Fase 2 — baixa detalhe+itens+resultado de cada edital da fila
 │   ├── filtro_pneu.py          Filtro compartilhado "é pneu de verdade?" (regex + regras)
-│   ├── test_filtro_pneu.py     Regressão do filtro (12 achados históricos + 4 de 14/jul/2026)
-│   │                           — ver "Auto-aperfeiçoamento" abaixo
+│   ├── test_filtro_pneu.py     Regressão do filtro (12 achados históricos + 4 de 14/jul/2026 +
+│   │                           7 de categoria em 16/jul/2026) — ver "Auto-aperfeiçoamento" abaixo
 │   ├── pneu_medida_matcher.py  Matching determinístico de medida (tupla largura/perfil/aro),
 │   │                           reusado pelo cotacao_master/ — ver Ciclo de match abaixo
-│   ├── conectar_pncp.py        Queries do schema `public` (mercado PNCP) usadas pelo dashboard
+│   ├── conectar_pncp.py        Queries do schema `public` (mercado PNCP) usadas pelo dashboard —
+│   │                           inclui carregar_editais_abertos() (ver Radar de Editais abaixo)
 │   ├── conectar_cotacao_master.py  Queries do schema `cotacao_fornecedor` (ver Cotação Master abaixo)
+│   ├── ui_explicacao.py        Padrão de explicabilidade local (16/jul/2026) — cabecalho_pagina()
+│   │                           (pergunta+fonte no topo) e regra() (expander "Regra e cálculo")
 │   ├── dashboard_common.py     Estilo/cores/loaders compartilhados entre as páginas do dashboard
+│   ├── .streamlit/config.toml  Tema escuro (16/jul/2026) — ver "Tema e paleta" abaixo
 │   ├── dashboard_pncp.py       Entrypoint do dashboard (Streamlit multi-page — `st.navigation`)
-│   ├── views/                  Conteúdo de cada página do dashboard (Mercado PNCP + Cotação Fornecedor)
+│   ├── views/                  Conteúdo de cada página do dashboard (Mercado PNCP + Radar de Editais +
+│   │                           Cotação Fornecedor)
 │   ├── recomputar_filtro.py    Reaplica filtro_pneu.py sem reraspar (quando o filtro muda)
 │   ├── migrar_para_supabase.py Migração one-shot SQLite → Postgres (já rodada, mantida por histórico)
 │   ├── schema_supabase.sql     Schema das 6 tabelas (schema `public`, mercado PNCP)
@@ -111,6 +116,55 @@ na memória). 2 investigações separadas, cada rodada:
    (catálogo real via API de detalhe) se os "novos" achados têm pneu de verdade — a maioria de
    termo genérico é ruído (achado 14/jul/2026: 36 candidatos amostrados via "manutenção de
    frota"/"peça veícular"/"borracharia", 0 tinham pneu real).
+
+**Achado 16/jul/2026 — contaminação de `categoria` (não é falso positivo/negativo de `eh_pneu`,
+é classificação errada dentro dos itens já corretos):**
+- `RE_CATEGORIA_CAMINHAO` só cobria aro 17-19,5 (ônibus) e 22-29 (caminhão) via "R" — perdia aro
+  solto sem R (16.5/20.5), notação decimal de OTR/agrícola (17.5-25, 12.4-24 — largura decimal
+  nunca existe em pneu de passeio) e notação antiga inteira de caminhão (750-16, 1000-20 —
+  largura ≥600mm, impossível em passeio). Fix cobre as 3, com `\b` logo após o 1º grupo decimal
+  pra não reinterpretar número de decreto formatado "5.123" como largura de pneu (bug de
+  backtracking, fechado). **8.565 de 33.804 itens "Passeio" migraram pra "Caminhão"** (25.238 →
+  24.958, restante foi pro fix de moto abaixo).
+- `RE_CATEGORIA_MOTO_NOTACAO` (novo) — notação de moto sem palavra-chave ("90/90-18",
+  "110/90-17") caía em "Passeio". Exige o trio completo largura/perfil/aro (aro obrigatório, não
+  opcional) — com aro opcional, par solto de índice de carga/velocidade ("IC 82/88") virava falso
+  positivo. **281 itens migraram pra "Moto"** (574 → 855).
+- Medição contra a base real antes de aplicar, `recomputar_filtro.py` rodado 16/jul/2026 —
+  distribuição final: Passeio 24.958, Caminhão 11.417, Câmara de ar 6.934, Agrícola 1.101,
+  Moto 855 (161.491 itens reprocessados, `eh_pneu=TRUE` inalterado em 46.654 — só `categoria`
+  mudou, nenhum item entrou/saiu do filtro).
+
+## Tema e paleta (skill dataviz)
+
+Paleta categórica/diverging validada pela skill `dataviz` (`references/palette.md`) desde
+14/jul/2026 (`PALETA_CATEGORICA_8`, `DIVERGING_POLO_NEG/NEUTRO/POS` em `dashboard_common.py`)
+— mas os gráficos já assumiam fundo escuro (`COR_GRID_DARK`, `COR_INK_DARK`) sem o dashboard
+ter tema escuro configurado, rodando no claro padrão do Streamlit (achado 16/jul/2026: causa
+raiz do visual "descombinado"). `analise/.streamlit/config.toml` fixa `base="dark"` com as
+mesmas cores de chrome escuro da paleta (`#0d0d0d` fundo de página, `#1a1a19` superfície,
+`#2a78d6` cor primária = slot 1 categórico). Testado nas 7 páginas, sem regressão.
+
+Status palette (fixa, nunca themed — `COR_STATUS_CRITICAL/WARNING/GOOD` em
+`dashboard_common.py`) é reservada pra estado (urgência/alerta), nunca reusada como cor
+categórica de série — sempre com ícone/label junto (usada 1ª vez no Kanban de Editais
+Abertos abaixo).
+
+## Radar de Editais (Kanban, 16/jul/2026)
+
+Página "🗂️ Radar de Editais" no dashboard — Kanban só-leitura dos editais com item de pneu
+que ainda estão com proposta aberta, agrupado por dias restantes até o encerramento
+(urgente ≤2 dias / esta semana 3-7 / depois >7). Fonte: mesma base do Mercado PNCP
+(`conectar_pncp.carregar_editais_abertos()`), filtrada por `situacao_compra_nome =
+'Divulgada no PNCP'` + `data_encerramento_proposta` no futuro — não precisa de scraper novo,
+o dado já é coletado pela Fase 2 (`coletor_pncp_detalhe.py`).
+
+**Decisão explícita (16/jul/2026): nenhum botão dispara escrita.** O card mostra o
+identificador `cnpj/ano/seq` pra rodar `analisa_edital.py` manualmente no terminal — dashboard
+é público, disparar a Camada 1 (chamada de API + Claude + escrita no Notion) a partir de um
+clique ali violaria a regra de nunca automatizar o pipeline buscar→card→análise (CLAUDE.md
+§17.8) e exporia custo de token a qualquer visitante. Mesmo raciocínio já usado em "Aliases
+Pendentes" (sem botão de aprovar no dashboard público).
 
 ## Cotação Master (coleta diária de preço, independente de edital)
 

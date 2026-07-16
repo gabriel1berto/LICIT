@@ -1,0 +1,11 @@
+# Tema escuro (16/jul/2026) — os gráficos (dashboard_common.py: COR_GRID_DARK,
+# COR_INK_DARK, fundo_transparente()) já eram estilizados assumindo fundo escuro;
+# sem tema explícito o Streamlit renderizava claro por padrão, chrome e gráfico
+# descombinando. Cores da paleta validada pela skill dataviz (references/palette.md,
+# "Chart chrome & ink" + slot categórico 1 = blue como cor primária de widget).
+[theme]
+base = "dark"
+backgroundColor = "#0d0d0d"
+secondaryBackgroundColor = "#1a1a19"
+textColor = "#ffffff"
+primaryColor = "#2a78d6"

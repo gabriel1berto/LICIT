@@ -2,9 +2,12 @@
 """
 dashboard_pncp.py — Entrypoint do dashboard (Streamlit multi-page nativo).
 
-2 grupos de página, propósitos diferentes:
+3 grupos de página, propósitos diferentes:
   - "Mercado PNCP": dado público de mercado nacional (editais de terceiro),
     sidebar com filtro de UF/período/categoria/regime.
+  - "Radar de Editais": Kanban só-leitura dos editais com pneu ainda com
+    proposta aberta — triagem operacional, não análise histórica. Análise
+    (Camada 1, analisa_edital.py) continua manual, fora do dashboard.
   - "Cotação Fornecedor": preço direto cotado nos nossos 4 distribuidor
     cadastrados (schema cotacao_fornecedor) — sem os filtros PNCP, que não
     fazem sentido aqui.
@@ -26,6 +29,9 @@ pagina = st.navigation({
         st.Page("views/mercado_produto.py", title="Produto", icon="📦"),
         st.Page("views/mercado_sazonalidade.py", title="Sazonalidade", icon="📅"),
         st.Page("views/mercado_fornecedores.py", title="Fornecedores e Preço", icon="🏭"),
+    ],
+    "🗂️ Radar de Editais": [
+        st.Page("views/radar_abertos.py", title="Editais Abertos", icon="🗂️"),
     ],
     "💰 Cotação Fornecedor": [
         st.Page("views/cotacao_preco_atual.py", title="Preço Atual", icon="📍"),

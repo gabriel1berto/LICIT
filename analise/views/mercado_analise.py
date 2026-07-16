@@ -10,8 +10,35 @@ from dashboard_common import (
     carregar_cobertura_uf, carregar_lat_lon,
     fundo_transparente, para_mil, preparar_pagina_pncp,
 )
+from ui_explicacao import cabecalho_pagina, regra
 
 st.title("🎯 Análise de mercado")
+cabecalho_pagina(
+    pergunta="Onde tem mercado de pneu no PNCP — qual UF, qual regime/tipo, quem já domina?",
+    fonte="Itens de edital coletados via API PNCP (`analise/coletor_pncp_detalhe.py`), já "
+    "filtrados pela heurística abaixo.",
+)
+
+with regra("ℹ️ Como decidimos que um item de edital é pneu de verdade"):
+    st.markdown(
+        "Todo item que aparece nesse dashboard passou pelo filtro `eh_pneu_de_verdade()` "
+        "(`analise/filtro_pneu.py`), aplicado à descrição estruturada do item (não ao título "
+        "do edital, que costuma ser genérico demais). Resumo da regra:\n\n"
+        "- **Aceita** quando o item começa com \"pneu\"/\"pneumático\"/\"câmara de ar\" "
+        "(ignorando ruído burocrático na frente, tipo código de item ou \"aquisição de\"), "
+        "**ou** quando tem uma medida reconhecível de pneu na descrição (ex: `175/70 R14`).\n"
+        "- **Recusa** mesmo com medida presente quando o produto real é outra coisa: veículo "
+        "inteiro citando a medida do pneu de fábrica (ambulância, van, caminhão), serviço "
+        "(montagem, reparo, recapagem de pneu **usado**), ou acessório avulso (roda, bico de ar).\n\n"
+        "**Exemplo aceito:** `0006648 - PNEU 205/55 R16, NOVO, CERTIFICADO INMETRO` — código de "
+        "item na frente, mas o produto é pneu.\n\n"
+        "**Exemplo recusado:** `AMBULÂNCIA TIPO A, PNEUS 185/65 R15 DE FÁBRICA` — tem medida de "
+        "pneu na descrição, mas o item vendido é o veículo (R$100k+), não o pneu.\n\n"
+        "A regra já passou por várias rodadas de correção documentadas em `README.md` (seção "
+        "\"Auto-aperfeiçoamento do filtro\") e tem suíte de teste de regressão "
+        "(`test_filtro_pneu.py`) — todo bug achado vira caso de teste antes do fix, pra não "
+        "voltar em silêncio."
+    )
 
 df, df_forn, cobertura_medida, com_medida, top_medidas, top_medidas_nomes_8 = preparar_pagina_pncp()
 

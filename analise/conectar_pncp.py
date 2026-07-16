@@ -267,6 +267,55 @@ def carregar_base_pncp() -> pd.DataFrame:
     return df
 
 
+def carregar_editais_abertos() -> pd.DataFrame:
+    """1 linha por edital com proposta ainda aberta (situação 'Divulgada no PNCP' +
+    encerramento no futuro) e pelo menos 1 item eh_pneu=TRUE. Radar de triagem
+    (Kanban), não análise de mercado — por isso não passa pelos mesmos tetos de
+    valor de carregar_base_pncp() (aqui o volume é baixo, dá pra olhar 1 a 1).
+    """
+    df = pd.read_sql_query(
+        """
+        SELECT e.numero_controle_pncp, e.orgao_cnpj, e.ano, e.numero_sequencial,
+               e.uf, e.municipio_nome AS municipio, e.orgao_nome, e.modalidade_licitacao_nome,
+               d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
+               d.data_encerramento_proposta, d.link_sistema_origem,
+               COUNT(i.numero_item) FILTER (WHERE i.eh_pneu) AS n_itens_pneu,
+               STRING_AGG(DISTINCT i.categoria, ', ') FILTER (WHERE i.eh_pneu) AS categorias
+        FROM editais e
+        JOIN detalhes d ON d.numero_controle_pncp = e.numero_controle_pncp
+        JOIN itens i ON i.numero_controle_pncp = e.numero_controle_pncp
+        WHERE d.situacao_compra_nome = 'Divulgada no PNCP'
+          AND d.data_encerramento_proposta IS NOT NULL
+          AND d.data_encerramento_proposta::timestamp > now()
+          AND i.eh_pneu = TRUE
+        GROUP BY e.numero_controle_pncp, e.orgao_cnpj, e.ano, e.numero_sequencial, e.uf,
+                 e.municipio_nome, e.orgao_nome, e.modalidade_licitacao_nome,
+                 d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
+                 d.data_encerramento_proposta, d.link_sistema_origem
+        """,
+        ENGINE,
+    )
+    if df.empty:
+        return df
+
+    df = df[~df["numero_controle_pncp"].isin(PROCESSOS_EXCLUIDOS_DADO_RUIM)]
+
+    # mesmo achado de retificação de carregar_base_pncp() (edital republicado gera
+    # numero_controle_pncp novo pro mesmo processo) — aqui mantém a versão MAIS RECENTE
+    # (não a mais antiga), porque é a única válida pra agir agora.
+    df = df.sort_values("numero_controle_pncp")
+    chave_dedup = df["orgao_cnpj"] + "|" + df["data_abertura_proposta"].astype(str)
+    df = df[~chave_dedup.duplicated(keep="last")]
+
+    df["data_encerramento_proposta"] = pd.to_datetime(df["data_encerramento_proposta"])
+    df["dias_restantes"] = (df["data_encerramento_proposta"] - pd.Timestamp.now()).dt.total_seconds() / 86400
+    df["pncp_url"] = (
+        "https://pncp.gov.br/app/editais/" + df["orgao_cnpj"] + "/" + df["ano"] + "/" + df["numero_sequencial"]
+    )
+    df["cnpj_ano_seq"] = df["orgao_cnpj"] + "/" + df["ano"] + "/" + df["numero_sequencial"]
+    return df.sort_values("dias_restantes")
+
+
 def carregar_fornecedores_resultado() -> pd.DataFrame:
     """1 linha por (item, fornecedor real vencedor) — granularidade fina, aceita fan-out
     de propósito (cota principal + reservada no mesmo item são 2 fornecedores diferentes,

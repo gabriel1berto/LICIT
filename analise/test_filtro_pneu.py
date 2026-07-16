@@ -1,14 +1,15 @@
 """
-test_filtro_pneu.py — Regressão do filtro "é pneu de verdade?" (eh_pneu_de_verdade).
+test_filtro_pneu.py — Regressão do filtro "é pneu de verdade?" (eh_pneu_de_verdade) e
+da classificação de categoria (classificar_categoria).
 
 Cobre os 8 bugs históricos documentados em filtro_pneu.py (achado 07-08/jul/2026)
-+ 3 bugs achados na auditoria de 14/jul/2026 (marcados xfail até o fix). Objetivo:
-nenhum bug documentado pode voltar em silêncio.
++ 3 bugs achados na auditoria de 14/jul/2026 + contaminação de categoria achada
+16/jul/2026 (Caminhão/Moto). Objetivo: nenhum bug documentado pode voltar em silêncio.
 """
 
 import pytest
 
-from filtro_pneu import eh_pneu_de_verdade
+from filtro_pneu import classificar_categoria, eh_pneu_de_verdade
 
 
 class TestPrefixoIgnoravel:
@@ -180,4 +181,49 @@ class TestPluralDeServico:
             "PNEU 215/75 R17.5 - Pneu novo, sem qualquer uso anterior, reforma, "
             "recauchutagem, remoldagem ou recuperação."
         ) is True
+
+
+# ── Achado 16/jul/2026 (auditoria de contaminação de categoria) ─────────────
+
+class TestCategoriaCaminhaoNaoAroR:
+    """Bug: regex antigo (r2[2-9]/r1[7-9].5) só cobria aro com 'R' explícito —
+    perdia aro solto sem R e notação decimal/inteira de caminhão."""
+
+    def test_aro_solto_sem_r_16_5_e_caminhao(self):
+        assert classificar_categoria("PNEU 275/70 16.5 CAMINHÃO BAÚ") == "Caminhão"
+
+    def test_otr_decimal_e_caminhao(self):
+        assert classificar_categoria("PNEU 17.5-25 16 LONAS RETROESCAVADEIRA") == "Caminhão"
+
+    def test_notacao_antiga_inteira_e_caminhao(self):
+        assert classificar_categoria("PNEU 1000-20 16 LONAS RODOVIÁRIO") == "Caminhão"
+
+    def test_numero_decreto_nao_e_falso_positivo(self):
+        """Regressão: backtracking do grupo decimal reinterpretava separador de
+        milhar ('5.123') como se fosse largura decimal de pneu de passeio."""
+        assert classificar_categoria(
+            "PNEU 175/70 R14 CONFORME DECRETO Nº 5.123 DE 2020"
+        ) == "Passeio"
+
+
+class TestCategoriaMotoNotacao:
+    """Bug: notação de moto sem palavra-chave ('90/90-18') caía em Passeio."""
+
+    def test_notacao_moto_com_barra_e_traco_e_moto(self):
+        assert classificar_categoria("PNEU 90/90-18 TRASEIRO") == "Moto"
+
+    def test_notacao_moto_so_com_barras_e_moto(self):
+        assert classificar_categoria("PNEU 110/90/17") == "Moto"
+
+    def test_par_indice_carga_velocidade_sem_aro_nao_e_moto(self):
+        """Regressão: exigir o 3º grupo (aro) evita confundir 'IC 82/88' (índice
+        de carga/velocidade solto, sem aro depois) com medida de moto."""
+        assert classificar_categoria(
+            "PNEU 175/65, R 14, ÍNDICE DE VELOCIDADE MÍNIMO T, ÍNDICE DE CARGA 82/88"
+        ) != "Moto"
+
+    def test_notacao_passeio_3_numeros_nao_e_moto(self):
+        """Regressão: '175/70/13' (passeio escrito sem R) não pode virar Moto
+        via substring '70/13' — lookbehind bloqueia trecho no meio do 3º número."""
+        assert classificar_categoria("PNEU 175/70/13") != "Moto"
 

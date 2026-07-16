@@ -171,8 +171,30 @@ RE_EXCLUSAO_SERVICO = re.compile(
 )
 RE_CATEGORIA_CAMARA = RE_CAMARA_INICIO
 RE_CATEGORIA_MOTO = re.compile(r"motocicleta|motoneta|ciclomotor", re.IGNORECASE)
+# achado 16/jul/26 (auditoria de contaminação "Passeio"): notação de moto sem palavra-chave
+# ("90/90-18", "110/90-17", "90-90-18") caía em Passeio por falta de âncora. Exige o trio
+# completo largura/perfil/aro (2º grupo obrigatório, não opcional) — testado contra a base
+# real: com o aro opcional, pares soltos de índice de carga/velocidade ("IC 82/88") geravam
+# falso positivo (nenhum aro depois); exigindo aro, esses somem e restam só medidas de moto
+# genuínas (281/635 candidatos, amostra 100% limpa). Lookbehind bloqueia ser só um trecho no
+# meio de notação de passeio 3-números ("175/70/13") ou decimal de OTR ("12.5/80-18").
+RE_CATEGORIA_MOTO_NOTACAO = re.compile(r"(?<!\d[-/.,])\b(?:[6-9]\d|1[0-2]\d)[-/]\d{2}[-/]\d{2}\b")
 RE_CATEGORIA_AGRICOLA = re.compile(r"trator|agr[íi]cola", re.IGNORECASE)
-RE_CATEGORIA_CAMINHAO = re.compile(r"r2[2-9]\.?[05]?\b|r1[7-9]\.?5\b", re.IGNORECASE)
+# achado 16/jul/26 (auditoria de contaminação "Passeio", 8.566/33.804 itens): regex antigo
+# só cobria aro 17-19,5 (ônibus) e 22-29 (caminhão) via "R" — perdia aro solto sem R
+# ("16.5", "20.5"), notação decimal de OTR/agrícola ("17.5-25", "12.4-24", "18.4-30" — largura
+# decimal nunca existe em pneu de passeio) e notação antiga de caminhão em número inteiro
+# ("750-16", "1000-20", "900-20" — largura ≥600mm, impossível em passeio). Bug de
+# backtracking fechado: \b logo após o 1º grupo decimal impede reinterpretar número de
+# decreto formatado "5.123" (separador de milhar) como se fosse largura decimal de pneu —
+# confirmado contra amostra de 40 itens que migrariam, 100% limpa.
+RE_CATEGORIA_CAMINHAO = re.compile(
+    r"r\s*2[2-9][.,]?[05]?\b|r\s*1[6-9][.,]?5\b|"
+    r"\b1[6-9][.,]5\b|\b2[0-4][.,]5\b|"
+    r"\b\d{1,2}[.,]\d{1,2}\b\s*[-x/r.]?\s*\d{2}\b|"
+    r"\b(?:[6-9]\d{2}|1[0-9]\d{2})\b\s*[-x/r.]?\s*\d{2}\b",
+    re.IGNORECASE,
+)
 
 
 def eh_pneu_de_verdade(descricao: str) -> bool:
@@ -207,7 +229,7 @@ def eh_pneu_de_verdade(descricao: str) -> bool:
 def classificar_categoria(descricao: str) -> str:
     if RE_CATEGORIA_CAMARA.search(descricao):
         return "Câmara de ar"
-    if RE_CATEGORIA_MOTO.search(descricao):
+    if RE_CATEGORIA_MOTO.search(descricao) or RE_CATEGORIA_MOTO_NOTACAO.search(descricao):
         return "Moto"
     if RE_CATEGORIA_AGRICOLA.search(descricao):
         return "Agrícola"

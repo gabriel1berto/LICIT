@@ -12,7 +12,10 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from conectar_pncp import carregar_base_pncp, carregar_fornecedores_resultado, cobertura_por_uf, cobertura_pct
+from conectar_pncp import (
+    carregar_base_pncp, carregar_editais_abertos as _carregar_editais_abertos,
+    carregar_fornecedores_resultado, cobertura_por_uf, cobertura_pct,
+)
 from conectar_cotacao_master import (
     carregar_cotacoes as _carregar_cotacoes_master,
     carregar_aliases_pendentes_detalhe as _carregar_aliases_pendentes_detalhe,
@@ -67,6 +70,14 @@ DIVERGING_POLO_POS = "#2a78d6"   # blue — acima da referência
 
 COR_INK_DARK  = "#c3c2b7"
 COR_GRID_DARK = "#3a3a37"
+
+# Status palette (skill dataviz — references/palette.md, "fixed — never themed"):
+# mesmo hex em claro/escuro, por definição — reservada pra estado (urgência,
+# alerta), nunca reusada como cor categórica de série, sempre com ícone/label
+# junto (nunca só a cor sozinha carrega o significado).
+COR_STATUS_CRITICAL = "#d03b3b"
+COR_STATUS_WARNING  = "#fab219"
+COR_STATUS_GOOD      = "#0ca30c"
 
 
 def cor_categorica_ordenada(rotulos_em_ordem: list[str]) -> dict[str, str]:
@@ -140,6 +151,11 @@ def carregar_cobertura_uf() -> pd.DataFrame:
     return cobertura_por_uf()
 
 
+@st.cache_data(ttl=300)
+def carregar_editais_abertos() -> pd.DataFrame:
+    return _carregar_editais_abertos()
+
+
 @st.cache_data
 def carregar_lat_lon() -> pd.DataFrame:
     ll = pd.read_csv(SQL_DIR / "municipios_lat_lon.csv")
@@ -171,7 +187,6 @@ def preparar_pagina_pncp():
     """
     feito, total, pct = carregar_cobertura()
     st.caption(
-        f"Fonte: API PNCP (coleta direta, todas as 27 UFs — sem o gap ~17x do ComprasGOV bulk). "
         f"⚠️ Coleta em andamento: **{feito}/{total} processos ({pct:.1f}%)**. "
         "Recarregue a página (F5) pra ver dado mais recente — cache expira a cada 5min."
     )
