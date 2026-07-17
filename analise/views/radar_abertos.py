@@ -51,15 +51,21 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "mais recente. **Valor do card é a soma só dos itens de pneu**, não o valor total do "
         "processo (que pode incluir item não-pneu junto) — quando o processo tem outros "
         "itens além de pneu, aparece o aviso '⚠️ N de M itens são pneu'.\n\n"
-"'🎯 N item(ns) bem posicionado(s), R\\$X' no card conta quantos itens têm meu preço "
-        "≤ mediana histórica (e soma meu\\_preço × quantidade desses) — só entre os itens "
-        "com medida já cotada, sem inventar dado pros demais.\n\n"
+"O card decompõe cada item de pneu em 4 buckets (achado 17/jul/2026, auditoria com "
+        "Fable 5 — um número único 'N bem posicionado' escondia 3 diagnósticos diferentes): "
+        "🎯 **bem posicionado** (meu preço ≤ mediana histórica) · 📉 **acima da média** (meu "
+        "preço > mediana histórica — problema de custo/distribuidor) · 📵 **sem cotação "
+        "nossa** (medida não cotada na Cotação Fornecedor — problema de catálogo/onboarding) "
+        "· ⚪ **sem histórico de mercado** (cotamos, mas não há resultado histórico pra "
+        "comparar — raro). Só o valor de 🎯 soma meu\\_preço × quantidade; os outros 3 são "
+        "só contagem, sem inventar valor pro que não dá pra avaliar.\n\n"
         "Dentro de **Detalhes**, a tabela item x preço compara, por medida: **preço médio "
         "histórico** (mediana do que já venceu processo parecido, Mercado PNCP) x **meu "
-        "preço** (menor custo atual entre os 5 distribuidores × 1,348, fórmula fixada em "
-        "CLAUDE.md §5). Só cobre as medidas já cotadas na Cotação Fornecedor — fora disso "
-        "aparece \"sem cotação\". É sinal probabilístico, não garantia: concorrente pode "
-        "ter custo que não monitoramos."
+        "preço** (menor custo já cotado entre os 5 distribuidores × 1,348, fórmula fixada em "
+        "CLAUDE.md §5 — é o menor preço visto em qualquer dia do histórico da Cotação "
+        "Fornecedor, não necessariamente o de hoje). Só cobre as medidas já cotadas na "
+        "Cotação Fornecedor — fora disso aparece \"sem cotação\". É sinal probabilístico, "
+        "não garantia: concorrente pode ter custo que não monitoramos."
     )
 
 editais = carregar_editais_abertos()
@@ -130,18 +136,47 @@ _cotacao_atual = carregar_cotacao_master()
 meu_custo_por_medida = _cotacao_atual.groupby("medida")["preco"].min()
 meu_preco_por_medida = meu_custo_por_medida * MULTIPLICADOR_PRECO_VENDA
 
-# "Bem posicionado" = meu preço calculado <= mediana histórica que já venceu processo
-# parecido, pra medida que eu já cotei. Item sem cotação/histórico não entra na conta
-# (não dá pra avaliar, não é nem "bem" nem "mal" posicionado).
+# Funil por item (achado 17/jul/2026, auditoria com Fable 5): "N bem posicionado" sozinho
+# colapsava 3 diagnósticos diferentes num número só — item sem cotação nossa (problema de
+# catálogo/onboarding de fornecedor), item cotado acima da mediana histórica (problema de
+# custo/distribuidor) e item sem histórico de mercado pra comparar (raro, quase não ocorre)
+# viravam todos "não bem posicionado", indistinguíveis. Medido contra a base real: 60,5% dos
+# itens do Kanban caem em "sem cotação nossa" — mas quase tudo fora do escopo de categoria
+# que a Cotação Master cobre hoje (Passeio + Câmara de ar), não falha de execução.
 itens_pneu = itens_pneu.copy()
 itens_pneu["preco_hist"] = itens_pneu["medida_extraida"].map(preco_hist_por_medida)
 itens_pneu["meu_preco"] = itens_pneu["medida_extraida"].map(meu_preco_por_medida)
-itens_pneu["bem_posicionado"] = itens_pneu["meu_preco"] <= itens_pneu["preco_hist"]
 itens_pneu["valor_se_ganhar"] = itens_pneu["meu_preco"] * itens_pneu["quantidade"]
-resumo_posicionamento = (
-    itens_pneu[itens_pneu["bem_posicionado"]]
-    .groupby("numero_controle_pncp")
-    .agg(n_bem_posicionado=("medida_extraida", "size"), valor_bem_posicionado=("valor_se_ganhar", "sum"))
+
+
+def _funil_item(row: pd.Series) -> str:
+    if pd.isna(row["meu_preco"]):
+        return "sem_cotacao"
+    if pd.isna(row["preco_hist"]):
+        return "sem_historico"
+    if row["meu_preco"] <= row["preco_hist"]:
+        return "bem_posicionado"
+    return "acima_media"
+
+
+# item sem medida identificável não entra no funil (nem "sem cotação" nem qualquer outro
+# bucket) — é um problema de PARSING da descrição, diferente dos 4 buckets acima, e já tem
+# aviso próprio dentro de Detalhes ("⚠️ N itens sem medida identificável").
+_itens_com_medida = itens_pneu.dropna(subset=["medida_extraida"]).copy()
+_itens_com_medida["funil"] = _itens_com_medida.apply(_funil_item, axis=1)
+BUCKETS_FUNIL = [
+    ("bem_posicionado", "🎯", "bem posicionado(s)"),
+    ("acima_media", "📉", "acima da média"),
+    ("sem_cotacao", "📵", "sem cotação nossa"),
+    ("sem_historico", "⚪", "sem histórico de mercado"),
+]
+resumo_funil = (
+    _itens_com_medida.groupby(["numero_controle_pncp", "funil"]).size().unstack(fill_value=0)
+    .reindex(columns=[b[0] for b in BUCKETS_FUNIL], fill_value=0)
+)
+valor_bem_posicionado_por_edital = (
+    _itens_com_medida[_itens_com_medida["funil"] == "bem_posicionado"]
+    .groupby("numero_controle_pncp")["valor_se_ganhar"].sum()
 )
 
 st.subheader("Onde estão os editais abertos")
@@ -189,7 +224,7 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
             continue
         if ordenar_por.startswith("Valor"):
             bucket["_valor_pos"] = bucket["numero_controle_pncp"].map(
-                resumo_posicionamento["valor_bem_posicionado"]
+                valor_bem_posicionado_por_edital
             ).fillna(-1)
             bucket = bucket.sort_values("_valor_pos", ascending=False)
         else:
@@ -217,12 +252,20 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                 n_pneu, n_total = int(row["n_itens_pneu"]), int(row["n_itens_total"])
                 if n_pneu < n_total:
                     st.caption(f"⚠️ {n_pneu} de {n_total} itens são pneu — resto do edital é outra coisa")
-                if row["numero_controle_pncp"] in resumo_posicionamento.index:
-                    pos = resumo_posicionamento.loc[row["numero_controle_pncp"]]
-                    st.caption(
-                        f"🎯 {int(pos['n_bem_posicionado'])} item(ns) bem posicionado(s), "
-                        f"R$ {fmt_abrev(pos['valor_bem_posicionado'])}"
-                    )
+                if row["numero_controle_pncp"] in resumo_funil.index:
+                    f = resumo_funil.loc[row["numero_controle_pncp"]]
+                    partes = []
+                    for chave, icone, label in BUCKETS_FUNIL:
+                        n_bucket = int(f[chave])
+                        if n_bucket == 0:
+                            continue
+                        if chave == "bem_posicionado":
+                            v = valor_bem_posicionado_por_edital.get(row["numero_controle_pncp"], 0)
+                            partes.append(f"{icone} {n_bucket} {label} (R$ {fmt_abrev(v)})")
+                        else:
+                            partes.append(f"{icone} {n_bucket} {label}")
+                    if partes:
+                        st.caption(" · ".join(partes))
                 st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)
                 with st.expander("Detalhes"):
                     objeto = row["objeto_compra"] or "(sem objeto descrito)"
