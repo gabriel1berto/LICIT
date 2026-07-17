@@ -350,13 +350,14 @@ def carregar_editais_abertos() -> pd.DataFrame:
 def carregar_itens_pneu_editais_abertos(numeros_controle: list[str]) -> pd.DataFrame:
     """1 linha por item de pneu dos editais abertos passados em `numeros_controle`
     (mesmo id retornado por carregar_editais_abertos) — usado pra tabela item x
-    preço médio histórico x meu preço na página Radar de Editais. Mesmos tetos de
-    valor_unitario_estimado (<=R$50k) já aplicados na query de cima."""
+    preço médio histórico x meu preço, e pro sinal "N itens bem posicionados" no
+    card, na página Radar de Editais. Mesmos tetos de valor_unitario_estimado
+    (<=R$50k) já aplicados na query de cima."""
     if not numeros_controle:
-        return pd.DataFrame(columns=["numero_controle_pncp", "descricao", "medida_extraida"])
+        return pd.DataFrame(columns=["numero_controle_pncp", "descricao", "quantidade", "medida_extraida"])
     df = pd.read_sql_query(
         text(
-            "SELECT numero_controle_pncp, descricao FROM itens "
+            "SELECT numero_controle_pncp, descricao, quantidade FROM itens "
             "WHERE eh_pneu = TRUE AND numero_controle_pncp = ANY(:nums) "
             "AND (valor_unitario_estimado IS NULL OR valor_unitario_estimado <= 50000)"
         ),

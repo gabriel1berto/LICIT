@@ -51,6 +51,9 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "mais recente. **Valor do card é a soma só dos itens de pneu**, não o valor total do "
         "processo (que pode incluir item não-pneu junto) — quando o processo tem outros "
         "itens além de pneu, aparece o aviso '⚠️ N de M itens são pneu'.\n\n"
+"'🎯 N item(ns) bem posicionado(s), R\\$X' no card conta quantos itens têm meu preço "
+        "≤ mediana histórica (e soma meu\\_preço × quantidade desses) — só entre os itens "
+        "com medida já cotada, sem inventar dado pros demais.\n\n"
         "Dentro de **Detalhes**, a tabela item x preço compara, por medida: **preço médio "
         "histórico** (mediana do que já venceu processo parecido, Mercado PNCP) x **meu "
         "preço** (menor custo atual entre os 5 distribuidores × 1,348, fórmula fixada em "
@@ -127,6 +130,20 @@ _cotacao_atual = carregar_cotacao_master()
 meu_custo_por_medida = _cotacao_atual.groupby("medida")["preco"].min()
 meu_preco_por_medida = meu_custo_por_medida * MULTIPLICADOR_PRECO_VENDA
 
+# "Bem posicionado" = meu preço calculado <= mediana histórica que já venceu processo
+# parecido, pra medida que eu já cotei. Item sem cotação/histórico não entra na conta
+# (não dá pra avaliar, não é nem "bem" nem "mal" posicionado).
+itens_pneu = itens_pneu.copy()
+itens_pneu["preco_hist"] = itens_pneu["medida_extraida"].map(preco_hist_por_medida)
+itens_pneu["meu_preco"] = itens_pneu["medida_extraida"].map(meu_preco_por_medida)
+itens_pneu["bem_posicionado"] = itens_pneu["meu_preco"] <= itens_pneu["preco_hist"]
+itens_pneu["valor_se_ganhar"] = itens_pneu["meu_preco"] * itens_pneu["quantidade"]
+resumo_posicionamento = (
+    itens_pneu[itens_pneu["bem_posicionado"]]
+    .groupby("numero_controle_pncp")
+    .agg(n_bem_posicionado=("medida_extraida", "size"), valor_bem_posicionado=("valor_se_ganhar", "sum"))
+)
+
 st.subheader("Onde estão os editais abertos")
 mapa_df = editais.dropna(subset=["codigo_ibge"]).merge(carregar_lat_lon(), on="codigo_ibge", how="left")
 mapa_df = mapa_df.dropna(subset=["latitude", "longitude"])
@@ -183,6 +200,12 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                 n_pneu, n_total = int(row["n_itens_pneu"]), int(row["n_itens_total"])
                 if n_pneu < n_total:
                     st.caption(f"⚠️ {n_pneu} de {n_total} itens são pneu — resto do edital é outra coisa")
+                if row["numero_controle_pncp"] in resumo_posicionamento.index:
+                    pos = resumo_posicionamento.loc[row["numero_controle_pncp"]]
+                    st.caption(
+                        f"🎯 {int(pos['n_bem_posicionado'])} item(ns) bem posicionado(s), "
+                        f"R$ {fmt_abrev(pos['valor_bem_posicionado'])}"
+                    )
                 st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)
                 with st.expander("Detalhes"):
                     objeto = row["objeto_compra"] or "(sem objeto descrito)"
