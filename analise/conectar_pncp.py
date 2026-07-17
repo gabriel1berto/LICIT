@@ -347,6 +347,26 @@ def carregar_editais_abertos() -> pd.DataFrame:
     return df.sort_values("dias_restantes")
 
 
+def carregar_itens_pneu_editais_abertos(numeros_controle: list[str]) -> pd.DataFrame:
+    """1 linha por item de pneu dos editais abertos passados em `numeros_controle`
+    (mesmo id retornado por carregar_editais_abertos) — usado pra tabela item x
+    preço médio histórico x meu preço na página Radar de Editais. Mesmos tetos de
+    valor_unitario_estimado (<=R$50k) já aplicados na query de cima."""
+    if not numeros_controle:
+        return pd.DataFrame(columns=["numero_controle_pncp", "descricao", "medida_extraida"])
+    df = pd.read_sql_query(
+        text(
+            "SELECT numero_controle_pncp, descricao FROM itens "
+            "WHERE eh_pneu = TRUE AND numero_controle_pncp = ANY(:nums) "
+            "AND (valor_unitario_estimado IS NULL OR valor_unitario_estimado <= 50000)"
+        ),
+        ENGINE,
+        params={"nums": list(numeros_controle)},
+    )
+    df["medida_extraida"] = df["descricao"].apply(_extrair_medida)
+    return df
+
+
 def carregar_fornecedores_resultado() -> pd.DataFrame:
     """1 linha por (item, fornecedor real vencedor) — granularidade fina, aceita fan-out
     de propósito (cota principal + reservada no mesmo item são 2 fornecedores diferentes,

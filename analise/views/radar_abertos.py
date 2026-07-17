@@ -7,14 +7,21 @@ manual, 1 ferramenta por vez (CLAUDE.md §17.8) — dashboard é público, não 
 pra disparar chamada de API/Claude/Notion sozinho.
 """
 
+import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from dashboard_common import (
     COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING,
-    carregar_editais_abertos, carregar_lat_lon, fmt_abrev, fundo_transparente,
+    carregar_base, carregar_cotacao_master, carregar_editais_abertos,
+    carregar_itens_pneu_editais_abertos, carregar_lat_lon, fmt_abrev, fundo_transparente,
 )
 from ui_explicacao import cabecalho_pagina, regra
+
+# CLAUDE.md §5 (revisado 17/jul/2026): Investimento + Frete 6% + Imposto 6% + margem
+# 20% no final = efetivo Custo x 1.348. Fórmula real vive na planilha (fórmula, não
+# script) — aqui é só a mesma constante pra estimar "meu preço" sem abrir a planilha.
+MULTIPLICADOR_PRECO_VENDA = 1.348
 
 st.title("🗂️ Radar de Editais")
 cabecalho_pagina(
@@ -43,7 +50,13 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "`numero_controle_pncp` novo pro mesmo processo) é deduplicada, mantendo a versão "
         "mais recente. **Valor do card é a soma só dos itens de pneu**, não o valor total do "
         "processo (que pode incluir item não-pneu junto) — quando o processo tem outros "
-        "itens além de pneu, aparece o aviso '⚠️ N de M itens são pneu'."
+        "itens além de pneu, aparece o aviso '⚠️ N de M itens são pneu'.\n\n"
+        "Dentro de **Detalhes**, a tabela item x preço compara, por medida: **preço médio "
+        "histórico** (mediana do que já venceu processo parecido, Mercado PNCP) x **meu "
+        "preço** (menor custo atual entre os 5 distribuidores × 1,348, fórmula fixada em "
+        "CLAUDE.md §5). Só cobre as medidas já cotadas na Cotação Fornecedor — fora disso "
+        "aparece \"sem cotação\". É sinal probabilístico, não garantia: concorrente pode "
+        "ter custo que não monitoramos."
     )
 
 editais = carregar_editais_abertos()
@@ -104,6 +117,15 @@ CORES_BUCKET = {f"{icone} {titulo}": cor for icone, titulo, _, cor, _ in BUCKETS
 # achado 16/jul/2026 (EDA real): mesmo órgão com 2+ editais de pneu abertos ao mesmo
 # tempo é sinal de comprador recorrente — vale relacionamento, não só oportunidade pontual.
 contagem_orgao = editais["orgao_nome"].value_counts()
+
+# Item x preço médio histórico x meu preço (Detalhes) — 1 lookup por medida pra toda a
+# página, não por card, senão vira 1 query por edital aberto.
+itens_pneu = carregar_itens_pneu_editais_abertos(tuple(editais["numero_controle_pncp"]))
+_base_mercado = carregar_base().dropna(subset=["medida_extraida", "valor_unitario_resultado"])
+preco_hist_por_medida = _base_mercado.groupby("medida_extraida")["valor_unitario_resultado"].median()
+_cotacao_atual = carregar_cotacao_master()
+meu_custo_por_medida = _cotacao_atual.groupby("medida")["preco"].min()
+meu_preco_por_medida = meu_custo_por_medida * MULTIPLICADOR_PRECO_VENDA
 
 st.subheader("Onde estão os editais abertos")
 mapa_df = editais.dropna(subset=["codigo_ibge"]).merge(carregar_lat_lon(), on="codigo_ibge", how="left")
@@ -180,6 +202,22 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                         st.caption(
                             f"🔁 Esse órgão tem {contagem_orgao[row['orgao_nome']]} editais de pneu "
                             "abertos agora, nesse filtro."
+                        )
+
+                    itens_edital = itens_pneu[itens_pneu["numero_controle_pncp"] == row["numero_controle_pncp"]]
+                    if not itens_edital.empty:
+                        tabela = itens_edital.copy()
+                        tabela["Item"] = tabela["medida_extraida"].fillna(tabela["descricao"].str[:40] + "…")
+                        tabela["Preço médio histórico"] = tabela["medida_extraida"].map(preco_hist_por_medida)
+                        tabela["Meu preço"] = tabela["medida_extraida"].map(meu_preco_por_medida)
+                        tabela = tabela[["Item", "Preço médio histórico", "Meu preço"]].drop_duplicates("Item")
+                        st.caption("Item x preço médio histórico x meu preço:")
+                        st.dataframe(
+                            tabela, use_container_width=True, hide_index=True,
+                            column_config={
+                                "Preço médio histórico": st.column_config.NumberColumn(format="R$ %.2f"),
+                                "Meu preço": st.column_config.NumberColumn(format="R$ %.2f"),
+                            },
                         )
                     st.caption(f"Pra analisar: `python analisa_edital.py {row['cnpj_ano_seq']} <notion_id>`")
 

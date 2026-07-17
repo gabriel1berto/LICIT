@@ -14,7 +14,8 @@ import streamlit as st
 
 from conectar_pncp import (
     carregar_base_pncp, carregar_editais_abertos as _carregar_editais_abertos,
-    carregar_fornecedores_resultado, cobertura_por_uf, cobertura_pct,
+    carregar_fornecedores_resultado, carregar_itens_pneu_editais_abertos as _carregar_itens_pneu_editais_abertos,
+    cobertura_por_uf, cobertura_pct,
 )
 from conectar_cotacao_master import (
     carregar_cotacoes as _carregar_cotacoes_master,
@@ -154,6 +155,11 @@ def carregar_cobertura_uf() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def carregar_editais_abertos() -> pd.DataFrame:
     return _carregar_editais_abertos()
+
+
+@st.cache_data(ttl=300)
+def carregar_itens_pneu_editais_abertos(numeros_controle: tuple[str, ...]) -> pd.DataFrame:
+    return _carregar_itens_pneu_editais_abertos(list(numeros_controle))
 
 
 @st.cache_data
