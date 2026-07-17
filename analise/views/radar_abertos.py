@@ -46,7 +46,29 @@ if editais.empty:
     st.info("Nenhum edital com pneu e proposta aberta no momento.")
     st.stop()
 
-st.caption(f"{len(editais)} edital(is) aberto(s) com item de pneu.")
+col_uf, col_mod, col_cat = st.columns(3)
+with col_uf:
+    uf_sel = st.multiselect("UF", sorted(editais["uf"].dropna().unique()), key="uf_radar")
+with col_mod:
+    mod_sel = st.multiselect(
+        "Modalidade", sorted(editais["modalidade_licitacao_nome"].dropna().unique()), key="mod_radar"
+    )
+with col_cat:
+    cats_disp = sorted({c.strip() for cs in editais["categorias"].dropna() for c in cs.split(",")})
+    cat_sel = st.multiselect("Categoria de produto", cats_disp, key="cat_radar")
+
+if uf_sel:
+    editais = editais[editais["uf"].isin(uf_sel)]
+if mod_sel:
+    editais = editais[editais["modalidade_licitacao_nome"].isin(mod_sel)]
+if cat_sel:
+    editais = editais[editais["categorias"].fillna("").apply(lambda s: any(c in s for c in cat_sel))]
+
+if editais.empty:
+    st.warning("Nenhum edital aberto bate esses filtros.")
+    st.stop()
+
+st.caption(f"{len(editais)} edital(is) aberto(s) com item de pneu, nesse filtro.")
 
 # Status (não categórico) — cor reservada de urgência, sempre com ícone+label junto
 # (skill dataviz, "status color nunca sozinha"). Bucket mais perto de 0 = mais crítico.
