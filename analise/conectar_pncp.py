@@ -270,8 +270,7 @@ def carregar_base_pncp() -> pd.DataFrame:
 def carregar_editais_abertos() -> pd.DataFrame:
     """1 linha por edital com proposta ainda aberta (situação 'Divulgada no PNCP' +
     encerramento no futuro) e pelo menos 1 item eh_pneu=TRUE. Radar de triagem
-    (Kanban), não análise de mercado — por isso não passa pelos mesmos tetos de
-    valor de carregar_base_pncp() (aqui o volume é baixo, dá pra olhar 1 a 1).
+    (Kanban), não análise de mercado.
 
     achado 16/jul/2026 (revisão manual item a item): "Leilão - Eletrônico" é o ÓRGÃO
     vendendo bens móveis usados (ex: "Alienação de 65 lotes de bens móveis") — pneu
@@ -279,6 +278,20 @@ def carregar_editais_abertos() -> pd.DataFrame:
     que o LICIT venderia. Direção oposta do negócio (LICIT vende PARA o governo, não
     compra dele) — excluído por modalidade, não por eh_pneu (o item em si não é
     "falso positivo" de pneu, é o processo inteiro que não se aplica).
+
+    achado 16/jul/2026 (EDA real via skill programmatic-eda): 2 bugs de dado —
+    1) sem teto de valor por ITEM (R$195M num "PNEUS, CÂMARAS..." — 10 itens de
+    câmara de ar com valor_unitario_estimado de até R$521k cada, soma real dos itens
+    ~R$1,64M, nada a ver com o valor_total_estimado do processo). O teto de processo
+    (R$300M, igual carregar_base_pncp) não pegava porque 195M < 300M — o erro está no
+    ITEM, não no total. Fix em 2 partes: (a) mesmo teto por item que carregar_base_pncp()
+    já usa (valor_unitario_estimado <= R$50k), (b) card usa valor_pneu_estimado (soma só
+    dos itens de pneu já filtrados) em vez de valor_total_estimado do processo inteiro —
+    mais preciso pro propósito da página (oportunidade de pneu, não o processo todo, que
+    pode ter item não-pneu junto) e imune a esse tipo de corrupção no campo de processo.
+    2) dedup por (cnpj+abertura) não pegava retificação que muda a DATA DE ABERTURA mas
+    mantém valor+encerramento (achado real: Touros/RN duplicado) — troca a chave pra
+    (cnpj+valor+encerramento).
     """
     df = pd.read_sql_query(
         """
@@ -287,6 +300,8 @@ def carregar_editais_abertos() -> pd.DataFrame:
                d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
                d.data_encerramento_proposta, d.link_sistema_origem, d.codigo_ibge, d.srp,
                COUNT(i.numero_item) FILTER (WHERE i.eh_pneu) AS n_itens_pneu,
+               SUM(i.valor_total) FILTER (WHERE i.eh_pneu) AS valor_pneu_estimado,
+               (SELECT COUNT(*) FROM itens i2 WHERE i2.numero_controle_pncp = e.numero_controle_pncp) AS n_itens_total,
                STRING_AGG(DISTINCT i.categoria, ', ') FILTER (WHERE i.eh_pneu) AS categorias
         FROM editais e
         JOIN detalhes d ON d.numero_controle_pncp = e.numero_controle_pncp
@@ -296,6 +311,8 @@ def carregar_editais_abertos() -> pd.DataFrame:
           AND d.data_encerramento_proposta::timestamp > now()
           AND i.eh_pneu = TRUE
           AND e.modalidade_licitacao_nome NOT ILIKE '%%leil%%'
+          AND (d.valor_total_estimado IS NULL OR d.valor_total_estimado <= 300000000)
+          AND (i.valor_unitario_estimado IS NULL OR i.valor_unitario_estimado <= 50000)
         GROUP BY e.numero_controle_pncp, e.orgao_cnpj, e.ano, e.numero_sequencial, e.uf,
                  e.municipio_nome, e.orgao_nome, e.modalidade_licitacao_nome,
                  d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
@@ -310,9 +327,13 @@ def carregar_editais_abertos() -> pd.DataFrame:
 
     # mesmo achado de retificação de carregar_base_pncp() (edital republicado gera
     # numero_controle_pncp novo pro mesmo processo) — aqui mantém a versão MAIS RECENTE
-    # (não a mais antiga), porque é a única válida pra agir agora.
+    # (não a mais antiga), porque é a única válida pra agir agora. Chave usa valor +
+    # encerramento (não abertura, que a retificação pode mudar sem mudar o processo).
     df = df.sort_values("numero_controle_pncp")
-    chave_dedup = df["orgao_cnpj"] + "|" + df["data_abertura_proposta"].astype(str)
+    chave_dedup = (
+        df["orgao_cnpj"] + "|" + df["valor_total_estimado"].astype(str) + "|"
+        + df["data_encerramento_proposta"].astype(str)
+    )
     df = df[~chave_dedup.duplicated(keep="last")]
 
     df["data_encerramento_proposta"] = pd.to_datetime(df["data_encerramento_proposta"])

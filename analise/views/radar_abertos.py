@@ -35,10 +35,15 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "- Modalidade **não é** Leilão — leilão é o órgão vendendo bem usado, não comprando "
         "(pneu ali é só especificação de um veículo sendo alienado, direção oposta do "
         "negócio).\n\n"
+        "- Item de pneu com `valor_unitário estimado` acima de R$50 mil é descartado — "
+        "mesmo teto que a página Análise de mercado usa pra pegar erro de digitação no "
+        "PNCP (achado real 16/jul/2026: câmara de ar de R$521 mil/unidade).\n\n"
         "Colunas do Kanban agrupam por dias restantes até o encerramento — quanto mais perto "
         "de 0, mais urgente decidir. Retificação de edital (PNCP gera "
         "`numero_controle_pncp` novo pro mesmo processo) é deduplicada, mantendo a versão "
-        "mais recente."
+        "mais recente. **Valor do card é a soma só dos itens de pneu**, não o valor total do "
+        "processo (que pode incluir item não-pneu junto) — quando o processo tem outros "
+        "itens além de pneu, aparece o aviso '⚠️ N de M itens são pneu'."
     )
 
 editais = carregar_editais_abertos()
@@ -96,6 +101,10 @@ def _bucket_de(dias: float) -> str:
 editais["bucket_label"] = editais["dias_restantes"].apply(_bucket_de)
 CORES_BUCKET = {f"{icone} {titulo}": cor for icone, titulo, _, cor, _ in BUCKETS}
 
+# achado 16/jul/2026 (EDA real): mesmo órgão com 2+ editais de pneu abertos ao mesmo
+# tempo é sinal de comprador recorrente — vale relacionamento, não só oportunidade pontual.
+contagem_orgao = editais["orgao_nome"].value_counts()
+
 st.subheader("Onde estão os editais abertos")
 mapa_df = editais.dropna(subset=["codigo_ibge"]).merge(carregar_lat_lon(), on="codigo_ibge", how="left")
 mapa_df = mapa_df.dropna(subset=["latitude", "longitude"])
@@ -143,9 +152,15 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                 )
                 dias = row["dias_restantes"]
                 st.metric("Encerra em", f"{dias:.1f} dia(s)")
-                st.caption(f"**{row['orgao_nome']}** — {row['municipio']}/{row['uf']}")
-                valor_txt = fmt_abrev(row["valor_total_estimado"])
-                st.caption(f"R$ {valor_txt}" if valor_txt != "—" else "sem valor")
+                orgao_label = row["orgao_nome"]
+                if contagem_orgao.get(row["orgao_nome"], 0) > 1:
+                    orgao_label += " 🔁"
+                st.caption(f"**{orgao_label}** — {row['municipio']}/{row['uf']}")
+                valor_txt = fmt_abrev(row["valor_pneu_estimado"])
+                st.caption(f"R$ {valor_txt} em itens de pneu" if valor_txt != "—" else "sem valor")
+                n_pneu, n_total = int(row["n_itens_pneu"]), int(row["n_itens_total"])
+                if n_pneu < n_total:
+                    st.caption(f"⚠️ {n_pneu} de {n_total} itens são pneu — resto do edital é outra coisa")
                 st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)
                 with st.expander("Detalhes"):
                     objeto = row["objeto_compra"] or "(sem objeto descrito)"
@@ -153,9 +168,19 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                     data_fmt = row["data_encerramento_proposta"].strftime("%d/%m/%Y %H:%M")
                     st.caption(
                         f"{row['modalidade_licitacao_nome'] or '—'} · "
-                        f"{int(row['n_itens_pneu'])} item(ns) pneu ({row['categorias'] or '—'}) · "
+                        f"{n_pneu} de {n_total} item(ns) são pneu ({row['categorias'] or '—'}) · "
                         f"encerra {data_fmt}"
                     )
+                    valor_proc_txt = fmt_abrev(row["valor_total_estimado"])
+                    st.caption(
+                        f"Valor estimado do processo inteiro (todos os itens): "
+                        f"R$ {valor_proc_txt}" if valor_proc_txt != "—" else "Valor do processo: sem dado"
+                    )
+                    if contagem_orgao.get(row["orgao_nome"], 0) > 1:
+                        st.caption(
+                            f"🔁 Esse órgão tem {contagem_orgao[row['orgao_nome']]} editais de pneu "
+                            "abertos agora, nesse filtro."
+                        )
                     st.caption(f"Pra analisar: `python analisa_edital.py {row['cnpj_ano_seq']} <notion_id>`")
 
 st.divider()
