@@ -159,7 +159,15 @@ def carregar_editais_abertos() -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def carregar_itens_pneu_editais_abertos(numeros_controle: tuple[str, ...]) -> pd.DataFrame:
-    return _carregar_itens_pneu_editais_abertos(list(numeros_controle))
+    # achado 17/jul/2026: st.cache_data hasheia o código DESSA função (wrapper), não o
+    # de _carregar_itens_pneu_editais_abertos() por trás — mudar só o conectar_pncp.py
+    # (adicionar coluna "quantidade") não invalidou cache antigo no Streamlit Cloud,
+    # gerou KeyError em produção. Garantir as colunas aqui, não só na fonte.
+    df = _carregar_itens_pneu_editais_abertos(list(numeros_controle))
+    for col in ("numero_controle_pncp", "descricao", "quantidade", "medida_extraida"):
+        if col not in df.columns:
+            df[col] = pd.NA
+    return df
 
 
 @st.cache_data
