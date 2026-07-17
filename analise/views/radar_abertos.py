@@ -174,15 +174,26 @@ else:
     )
 
 st.divider()
+ordenar_por = st.radio(
+    "Ordenar cards por:", ["Prazo (mais urgente primeiro)", "Valor bem posicionado (maior primeiro)"],
+    horizontal=True, key="ordenar_radar",
+)
 cols = st.columns(len(BUCKETS))
 for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
     with col:
         st.markdown(f"#### {icone} {titulo}")
         st.caption(subtitulo)
-        bucket = editais[editais["dias_restantes"].apply(cond)]
+        bucket = editais[editais["dias_restantes"].apply(cond)].copy()
         if bucket.empty:
             st.caption("Nenhum edital nessa faixa.")
             continue
+        if ordenar_por.startswith("Valor"):
+            bucket["_valor_pos"] = bucket["numero_controle_pncp"].map(
+                resumo_posicionamento["valor_bem_posicionado"]
+            ).fillna(-1)
+            bucket = bucket.sort_values("_valor_pos", ascending=False)
+        else:
+            bucket = bucket.sort_values("dias_restantes")
         for _, row in bucket.iterrows():
             with st.container(border=True):
                 st.markdown(
@@ -195,8 +206,14 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                 if contagem_orgao.get(row["orgao_nome"], 0) > 1:
                     orgao_label += " 🔁"
                 st.caption(f"**{orgao_label}** — {row['municipio']}/{row['uf']}")
-                valor_txt = fmt_abrev(row["valor_pneu_estimado"])
-                st.caption(f"R$ {valor_txt} em itens de pneu" if valor_txt != "—" else "sem valor")
+                valor_pneu = row["valor_pneu_estimado"]
+                if pd.isna(valor_pneu) or valor_pneu == 0:
+                    # achado 17/jul/26 (auditoria de confiança do card): alguns órgãos
+                    # publicam valor_unitario_estimado=0.0 pra todo item (não é bug, é o
+                    # órgão não informando valor) — "R$ 0" lia como "não vale nada".
+                    st.caption("Sem valor estimado (órgão não informou no PNCP)")
+                else:
+                    st.caption(f"R$ {fmt_abrev(valor_pneu)} em itens de pneu")
                 n_pneu, n_total = int(row["n_itens_pneu"]), int(row["n_itens_total"])
                 if n_pneu < n_total:
                     st.caption(f"⚠️ {n_pneu} de {n_total} itens são pneu — resto do edital é outra coisa")
@@ -216,11 +233,11 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                         f"{n_pneu} de {n_total} item(ns) são pneu ({row['categorias'] or '—'}) · "
                         f"encerra {data_fmt}"
                     )
-                    valor_proc_txt = fmt_abrev(row["valor_total_estimado"])
-                    st.caption(
-                        f"Valor estimado do processo inteiro (todos os itens): "
-                        f"R$ {valor_proc_txt}" if valor_proc_txt != "—" else "Valor do processo: sem dado"
-                    )
+                    valor_proc = row["valor_total_estimado"]
+                    if pd.isna(valor_proc) or valor_proc == 0:
+                        st.caption("Valor estimado do processo inteiro: sem dado (órgão não informou no PNCP)")
+                    else:
+                        st.caption(f"Valor estimado do processo inteiro (todos os itens): R$ {fmt_abrev(valor_proc)}")
                     if contagem_orgao.get(row["orgao_nome"], 0) > 1:
                         st.caption(
                             f"🔁 Esse órgão tem {contagem_orgao[row['orgao_nome']]} editais de pneu "

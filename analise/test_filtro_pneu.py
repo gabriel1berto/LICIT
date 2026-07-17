@@ -49,6 +49,19 @@ class TestVeiculoInteiro:
     def test_furgao_van_e_false(self):
         assert eh_pneu_de_verdade("FURGAO/VAN 10+1 PASSAGEIROS 185/65 R15") is False
 
+    def test_aquisicao_de_um_caminhao_e_false(self):
+        """Achado 17/jul/26: artigo indefinido (um/uma) entre 'de' e o nome do
+        veículo escapava do prefixo ignorável — R$630k classificado como pneu."""
+        assert eh_pneu_de_verdade(
+            "Aquisição de um caminhão pipa zero quilômetro, ano/modelo 2025/2025, "
+            "com tanque de capacidade mínima de 10.000 litros, pneus 275/80 R22.5"
+        ) is False
+
+    def test_aquisicao_de_uma_ambulancia_e_false(self):
+        assert eh_pneu_de_verdade(
+            "Aquisição de uma ambulância tipo A, zero quilômetro, pneus 185/65 R15 de fábrica"
+        ) is False
+
 
 class TestServicoNoInicio:
     def test_montagem_no_inicio_e_false(self):

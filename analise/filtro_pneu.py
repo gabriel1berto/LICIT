@@ -64,8 +64,13 @@ RE_MEDIDA_R = re.compile(r"\d{3}\s*/\s*\d{2}\s*/?\s*[Rr]\s*\d{2}(?:[.,]\d)?[A-Za
 # achado 08/jul/26: "FURGAO/VAN 10+1 PASSAGEIROS..." e "UNIDADE MOVEL DE BANCO DE
 # LEITE - VEÍCULO AUTOMOTOR..." (unidade odontológica móvel, unidade de vacinação) são
 # veículo inteiro (R$100k-800k) que escapavam por não ter "furgão"/"unidade móvel" na lista.
+# achado 17/jul/26 (auditoria de confiança do card Radar de Editais): "AQUISIÇÃO DE UM
+# CAMINHÃO PIPA...", "AQUISIÇÃO DE UMA AMBULÂNCIA..." escapavam porque o artigo indefinido
+# (um/uma/uns/umas) entre "de" e o nome do veículo não era coberto pelo prefixo ignorável —
+# 4 itens reais achados (caminhão pipa R$630k, caminhão basculante R$589k x2, sedan
+# R$182k) classificados como pneu.
 RE_VEICULO_INICIO = re.compile(
-    rf"^\s*{RE_PREFIXO_IGNORAR}(ve[íi]culo|caminh[ãa]o|ambul[âa]ncia|[ôo]nibus|micro[ -]?[ôo]nibus|van\b|"
+    rf"^\s*{RE_PREFIXO_IGNORAR}(?:um[as]?s?\s+)?(ve[íi]culo|caminh[ãa]o|ambul[âa]ncia|[ôo]nibus|micro[ -]?[ôo]nibus|van\b|"
     r"furg[ãa]o|unidade\s+m[óo]vel|"
     r"pick[ -]?up|caminhonete|trator\b|motocicleta|motoneta|"
     r"loca[çc][ãa]o\s+(di[áa]ria\s+)?de\s+ve[íi]culo)",

@@ -308,7 +308,7 @@ def carregar_editais_abertos() -> pd.DataFrame:
         JOIN itens i ON i.numero_controle_pncp = e.numero_controle_pncp
         WHERE d.situacao_compra_nome = 'Divulgada no PNCP'
           AND d.data_encerramento_proposta IS NOT NULL
-          AND d.data_encerramento_proposta::timestamp > now()
+          AND d.data_encerramento_proposta::timestamp > (now() AT TIME ZONE 'America/Sao_Paulo')
           AND i.eh_pneu = TRUE
           AND e.modalidade_licitacao_nome NOT ILIKE '%%leil%%'
           AND (d.valor_total_estimado IS NULL OR d.valor_total_estimado <= 300000000)
@@ -337,7 +337,13 @@ def carregar_editais_abertos() -> pd.DataFrame:
     df = df[~chave_dedup.duplicated(keep="last")]
 
     df["data_encerramento_proposta"] = pd.to_datetime(df["data_encerramento_proposta"])
-    df["dias_restantes"] = (df["data_encerramento_proposta"] - pd.Timestamp.now()).dt.total_seconds() / 86400
+    # achado 17/jul/2026 (auditoria de confiança do card): data_encerramento_proposta vem
+    # do PNCP em hora de Brasília, sem timezone explícito (naive). pd.Timestamp.now() usa o
+    # relógio do servidor — no Streamlit Cloud isso é UTC, não BRT. Sem o ajuste, "dias
+    # restantes" saía sistematicamente 3h menor que o real (podia até mostrar edital ainda
+    # aberto como já encerrado). Mesmo ajuste aplicado no WHERE da query acima.
+    agora_brt = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None)
+    df["dias_restantes"] = (df["data_encerramento_proposta"] - agora_brt).dt.total_seconds() / 86400
     df["regime"] = df["srp"].apply(lambda v: "RP" if v else "CD")
     df["pncp_url"] = (
         "https://pncp.gov.br/app/editais/" + df["orgao_cnpj"] + "/" + df["ano"] + "/" + df["numero_sequencial"]
