@@ -135,7 +135,17 @@ VALOR_UNITARIO_TETO_SANIDADE = 50_000
 # manual documentada em vez de teto genérico de item/processo, porque um teto que cortasse
 # isso também cortaria demanda real grande e legítima (ex: RJ tem item de R$8,8M plausível
 # — frota real de capital). Decisão explícita do usuário: excluir processo pontualmente.
-PROCESSOS_EXCLUIDOS_DADO_RUIM = {"19493732000199-1-000101/2025", "19493732000199-1-000209/2025"}
+#
+# achado 17/jul/26 (pente fino no Radar de Editais): Consórcio Vale do Taquari/RS,
+# TODOS os 10 itens de câmara de ar com valor_unitario_estimado implausível (R$19k a
+# R$521k — câmara de ar real custa R$50-150). Teto de R$50k/item corta só 7 dos 10; os
+# 3 sobreviventes (R$19,3k/R$23,3k/R$27,5k) são igualmente dado ruim, só ficaram abaixo
+# do teto por acaso — card aparecia no Kanban como "R$70k em 3 itens" oportunidade real.
+PROCESSOS_EXCLUIDOS_DADO_RUIM = {
+    "19493732000199-1-000101/2025",
+    "19493732000199-1-000209/2025",
+    "07242772000189-1-000001/2026",
+}
 
 
 def carregar_base_pncp() -> pd.DataFrame:
