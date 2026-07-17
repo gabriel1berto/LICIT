@@ -44,7 +44,11 @@ PNCP_APP_URL = "https://pncp.gov.br/app/editais/{cnpj}/{ano}/{seq}"
 
 BRT = timezone(timedelta(hours=-3))
 
-MODALIDADES = [6, 8]  # 6 = Pregão Eletrônico, 8 = Dispensa
+MODALIDADES = [6, 7, 8]  # 6 = Pregão Eletrônico, 7 = Pregão Presencial, 8 = Dispensa
+# achado 17/jul/26 (auditoria de FN de descoberta): 151 editais/R$35,8mi de pneu na
+# base (jan/2025-hoje) eram só Pregão Presencial — fora do radar porque MODALIDADES
+# não incluía o 7. Maior fatia dos 238 editais/R$40,8mi que existiam na base mas
+# nunca chegavam no email diário (achado por SELECT na base, sem request novo à API).
 
 SLEEP_BETWEEN_DETAIL = 1.5   # segundos entre chamadas ao endpoint de detalhe
 SLEEP_BETWEEN_PAGES  = 1.2   # segundos entre páginas da busca
