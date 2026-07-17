@@ -166,6 +166,25 @@ clique ali violaria a regra de nunca automatizar o pipeline buscar→card→aná
 §17.8) e exporia custo de token a qualquer visitante. Mesmo raciocínio já usado em "Aliases
 Pendentes" (sem botão de aprovar no dashboard público).
 
+Filtros (UF, Modalidade, Categoria de produto, Regime RP/CD) afetam mapa e Kanban juntos.
+Mapa "Onde estão os editais abertos" — 1 ponto por edital, cor por urgência (status palette,
+não categórica). Ponto de saída dos distribuidores ainda não existe (aguardando cadastro
+manual no Notion).
+
+**Achados 16/jul/2026 (EDA real, skill `programmatic-eda`) — 2 bugs de dado + 2 evoluções:**
+- Teto de valor por ITEM (`valor_unitario_estimado <= R$50k`, mesmo teto de
+  `carregar_base_pncp()`) — sem ele, um edital com câmara de ar cotada a R$521k/unidade
+  aparecia como oportunidade de R$195mi (soma real dos itens: ~R$1,64mi). O teto de
+  processo (R$300M) não pegava porque o erro estava no item, não no total.
+  `valor_pneu_estimado` (soma só dos itens de pneu já filtrados) substitui
+  `valor_total_estimado` do processo no card — mais preciso e imune a esse tipo de erro.
+- Dedup trocado de `(cnpj+abertura)` pra `(cnpj+valor+encerramento)` — retificação pode
+  mudar a data de abertura sem mudar o processo (achado real: Touros/RN duplicado 2x).
+- Aviso "N de M itens são pneu" quando o edital não é 100% dedicado (pneu é item
+  secundário num edital genérico maior).
+- Badge 🔁 de comprador recorrente — mesmo órgão com 2+ editais de pneu abertos ao mesmo
+  tempo, sinal de relacionamento a cultivar, não só oportunidade pontual.
+
 ## Cotação Master (coleta diária de preço, independente de edital)
 
 Pipeline separado do fluxo de cotação por edital (que segue intocado) — cota diariamente as
