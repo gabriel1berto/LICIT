@@ -1,10 +1,13 @@
 name: Cotação Master — coleta diária de preço por medida
 
-# Só manual por enquanto (workflow_dispatch) — sem `schedule:`. Ativar cron
-# só depois de validar a 1ª rodada real (decisão do usuário, ver plano
-# cotacao_master).
+# Cron ativado 17/jul/2026 (decisão do usuário — expansão de 30 para 98
+# medidas, roda sem aprovação manual). 12h UTC = 9h BRT, depois da tarefa
+# agendada local do Bransales (6h BRT) — sem dependência real entre as duas
+# (escrevem no mesmo banco, horários só evitam sobreposição de log).
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * *'
 
 concurrency:
   group: cotacao-master
@@ -13,7 +16,12 @@ concurrency:
 jobs:
   cotacao_master:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Subiu de 120 para 350min em 17/jul/2026 — lista de medidas foi de 30
+    # para 98 (3.3x), 120min não é suficiente pros 4 fornecedores rodando em
+    # CI (Bransales é local, ver skip abaixo). 350 fica logo abaixo do teto
+    # duro de 360min (6h) do GitHub Actions hosted runner, pra terminar com
+    # log limpo em vez de ser matado pela plataforma.
+    timeout-minutes: 350
 
     steps:
       - name: Checkout

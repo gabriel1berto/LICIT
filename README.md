@@ -204,8 +204,17 @@ outros, a comparação sumia com quem tinha rodado em dia mais antigo (mesmo sen
 mais recente daquele fornecedor). Corrigido pra usar a última cotação de CADA fornecedor,
 não o dia mais recente do conjunto (`analise/views/cotacao_preco_atual.py`).
 
-**Automação:** `.github/workflows/cotacao_master.yml`, só `workflow_dispatch` (manual) até
-validar rodagem real — sem cron ainda.
+**Expansão de cobertura (17/jul/2026):** `medidas_prioritarias.json` foi de 30 para 98
+medidas — 30 originais (frequência real, itens Passeio 2026) + 28 achadas faltando no
+Radar de Editais + 40 novas do mesmo filtro de frequência real (threshold 2+ ocorrências
+nos itens Passeio 2026, PNCP). 3 tamanhos descartados do filtro (`110/90 R17`,
+`340/80 R18`, `120/80 R18`) por parecerem contaminação de categoria (moto/agrícola
+classificado como Passeio — mesmo bug em investigação no §17.15 do CLAUDE.md).
+
+**Automação:** `.github/workflows/cotacao_master.yml` — cron **ativado 17/jul/2026**
+(diário, 12h UTC / 9h BRT), depois de validar rodagem manual. `timeout-minutes` subiu de
+120 para 350 pra caber o volume novo (3.3x mais medidas). Tarefa agendada local do
+Bransales também precisou de `ExecutionTimeLimit` maior (30min → 4h) pelo mesmo motivo.
 
 ### Bransales — só roda local (fixado 14/jul/2026)
 
