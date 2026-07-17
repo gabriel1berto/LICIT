@@ -228,9 +228,11 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                         )
 
                     itens_edital = itens_pneu[itens_pneu["numero_controle_pncp"] == row["numero_controle_pncp"]]
-                    if not itens_edital.empty:
-                        tabela = itens_edital.copy()
-                        tabela["Item"] = tabela["medida_extraida"].fillna(tabela["descricao"].str[:40] + "…")
+                    n_sem_medida = int(itens_edital["medida_extraida"].isna().sum())
+                    itens_com_medida = itens_edital.dropna(subset=["medida_extraida"])
+                    if not itens_com_medida.empty:
+                        tabela = itens_com_medida.copy()
+                        tabela["Item"] = tabela["medida_extraida"]
                         tabela["Preço médio histórico"] = tabela["medida_extraida"].map(preco_hist_por_medida)
                         tabela["Meu preço"] = tabela["medida_extraida"].map(meu_preco_por_medida)
                         tabela = tabela[["Item", "Preço médio histórico", "Meu preço"]].drop_duplicates("Item")
@@ -241,6 +243,12 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                                 "Preço médio histórico": st.column_config.NumberColumn(format="R$ %.2f"),
                                 "Meu preço": st.column_config.NumberColumn(format="R$ %.2f"),
                             },
+                        )
+                    if n_sem_medida:
+                        st.caption(
+                            f"⚠️ {n_sem_medida} item(ns) sem medida identificável na descrição do PNCP "
+                            "(ex: \"Pneu veículo automotivo\", sem tamanho) — medida real só no anexo/TR "
+                            "do edital, não dá pra comparar preço automaticamente."
                         )
                     st.caption(f"Pra analisar: `python analisa_edital.py {row['cnpj_ano_seq']} <notion_id>`")
 
