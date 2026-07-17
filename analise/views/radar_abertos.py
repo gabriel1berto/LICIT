@@ -46,7 +46,7 @@ if editais.empty:
     st.info("Nenhum edital com pneu e proposta aberta no momento.")
     st.stop()
 
-col_uf, col_mod, col_cat = st.columns(3)
+col_uf, col_mod, col_cat, col_regime = st.columns(4)
 with col_uf:
     uf_sel = st.multiselect("UF", sorted(editais["uf"].dropna().unique()), key="uf_radar")
 with col_mod:
@@ -56,11 +56,18 @@ with col_mod:
 with col_cat:
     cats_disp = sorted({c.strip() for cs in editais["categorias"].dropna() for c in cs.split(",")})
     cat_sel = st.multiselect("Categoria de produto", cats_disp, key="cat_radar")
+with col_regime:
+    regime_sel = st.multiselect(
+        "Regime", sorted(editais["regime"].dropna().unique()), key="regime_radar",
+        help="RP = Registro de Preço (SRP) · CD = Compra Direta (sem SRP)",
+    )
 
 if uf_sel:
     editais = editais[editais["uf"].isin(uf_sel)]
 if mod_sel:
     editais = editais[editais["modalidade_licitacao_nome"].isin(mod_sel)]
+if regime_sel:
+    editais = editais[editais["regime"].isin(regime_sel)]
 if cat_sel:
     editais = editais[editais["categorias"].fillna("").apply(lambda s: any(c in s for c in cat_sel))]
 

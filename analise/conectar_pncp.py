@@ -285,7 +285,7 @@ def carregar_editais_abertos() -> pd.DataFrame:
         SELECT e.numero_controle_pncp, e.orgao_cnpj, e.ano, e.numero_sequencial,
                e.uf, e.municipio_nome AS municipio, e.orgao_nome, e.modalidade_licitacao_nome,
                d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
-               d.data_encerramento_proposta, d.link_sistema_origem, d.codigo_ibge,
+               d.data_encerramento_proposta, d.link_sistema_origem, d.codigo_ibge, d.srp,
                COUNT(i.numero_item) FILTER (WHERE i.eh_pneu) AS n_itens_pneu,
                STRING_AGG(DISTINCT i.categoria, ', ') FILTER (WHERE i.eh_pneu) AS categorias
         FROM editais e
@@ -299,7 +299,7 @@ def carregar_editais_abertos() -> pd.DataFrame:
         GROUP BY e.numero_controle_pncp, e.orgao_cnpj, e.ano, e.numero_sequencial, e.uf,
                  e.municipio_nome, e.orgao_nome, e.modalidade_licitacao_nome,
                  d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
-                 d.data_encerramento_proposta, d.link_sistema_origem, d.codigo_ibge
+                 d.data_encerramento_proposta, d.link_sistema_origem, d.codigo_ibge, d.srp
         """,
         ENGINE,
     )
@@ -317,6 +317,7 @@ def carregar_editais_abertos() -> pd.DataFrame:
 
     df["data_encerramento_proposta"] = pd.to_datetime(df["data_encerramento_proposta"])
     df["dias_restantes"] = (df["data_encerramento_proposta"] - pd.Timestamp.now()).dt.total_seconds() / 86400
+    df["regime"] = df["srp"].apply(lambda v: "RP" if v else "CD")
     df["pncp_url"] = (
         "https://pncp.gov.br/app/editais/" + df["orgao_cnpj"] + "/" + df["ano"] + "/" + df["numero_sequencial"]
     )
