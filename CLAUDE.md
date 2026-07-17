@@ -99,15 +99,26 @@ Credenciais vivem só no `.env` (gitignorado) — nunca escrever senha aqui de n
 
 ---
 
-## 5. Fórmula de Precificação (fixada jun/2026)
+## 5. Fórmula de Precificação (fixada jun/2026, revisada 17/jul/2026)
+
+Vive só na planilha (colunas fórmula N-Q, nunca escritas por script — ver §15.5), esta
+seção documenta o que ela calcula de fato:
 
 ```
-Preço de leilão UN  = Custo × 1.24
-Margem sem frete    = Custo × 0.20
-Imposto             = "4%"
 Investimento total  = Custo × Qtde
-Frete               = cotação manual pós-análise
+Frete                = Investimento × 6%
+Imposto              = (Investimento + Frete) × 6%
+Preço de venda       = (Investimento + Frete + Imposto) × 1.20   (margem de lucro 20%)
+                      ≈ Custo × 1.348 (efetivo, ~35% de markup total)
 ```
+
+**Achado 17/jul/2026:** a versão anterior (Custo × 1.24) já estava desatualizada em
+relação à planilha viva — frete era um placeholder de 20% do investimento (não uma
+cotação real), e o multiplicador final estava **inconsistente entre os 4 blocos**
+(Bransales/GP/Green Pneus em ×1.1, Cantu em ×1.2 — nunca uniformizado de fato, apesar do
+README dizer que sim). Corrigido na planilha modelo mestre: frete recalibrado pra 6%
+(ainda é proxy, não cotação real — risco §6.2 de ajustar frete real pós-adjudicação
+continua valendo), multiplicador final uniformizado em ×1.20 nos 4 blocos.
 
 ---
 
@@ -291,7 +302,7 @@ Relevante pra pipeline `analise/` (DuckDB + ComprasGOV): `query-validation` (rev
 Formato final de precificação é planilha, não tabela Notion (decisão 09/jul/2026 — tabela Notion achatada foi considerada ruim demais pra decisão).
 
 - **Modelo mestre:** https://drive.google.com/drive/folders/1Nf10IsY2Gzpf_1WXWuKBC0B58vAbnuXX — **nunca editar direto**, sempre duplicar (`copy_file` MCP) antes de preencher. Toda mudança estrutural (coluna nova, fórmula) vai no modelo E na cópia ativa, nunca só numa.
-- **Estrutura (12/jul/2026):** 4 blocos empilhados (Bransales linha 5-16, Cantu 20-31, GP 35-46, Green Pneus 50-61), 12 linhas de item cada. Colunas de entrada A-L: Item / **Produto** (tipo: Pneu/Câmara de ar/Roda/etc) / **Modelo** (medida) / **Especificação Técnica** (IC/IV/Treadwear/Construção/INMETRO, N/D se ausente) / Critérios técnicos / Distribuidor / Marca / Link / Observação / Preço UN / **Ref. Edital** (era "Preço Leilão", renomeado) / Qtde. Coluna **U = Vencedor** (fórmula, compara Preço UN do mesmo item nos 4 blocos, marca "🏆 Vencedor" no mais barato — **PT-BR usa `;` não `,` como separador de argumento de função**, `,` só decimal). Colunas N-Q + W/X/Y = fórmula (Investimento/Frete/Imposto/Preço de venda/Margem ruim/boa/líquida) — uniformizadas nos 4 blocos, nunca escrever nelas. Notas de documentação (hover) em cada cabeçalho.
+- **Estrutura (12/jul/2026):** 4 blocos empilhados (Bransales linha 5-16, Cantu 20-31, GP 35-46, Green Pneus 50-61), 12 linhas de item cada. Colunas de entrada A-L: Item / **Produto** (tipo: Pneu/Câmara de ar/Roda/etc) / **Modelo** (medida) / **Especificação Técnica** (IC/IV/Treadwear/Construção/INMETRO, N/D se ausente) / Critérios técnicos / Distribuidor / Marca / Link / Observação / Preço UN / **Ref. Edital** (era "Preço Leilão", renomeado) / Qtde. Coluna **U = Vencedor** (fórmula, compara Preço UN do mesmo item nos 4 blocos, marca "🏆 Vencedor" no mais barato — **PT-BR usa `;` não `,` como separador de argumento de função**, `,` só decimal). Colunas N-Q + W/X/Y = fórmula (Investimento/Frete/Imposto/Preço de venda/Margem ruim/boa/líquida) — uniformizadas nos 4 blocos (Cantu tinha drift no multiplicador final, corrigido 17/jul/2026, ver §5), nunca escrever nelas. Notas de documentação (hover) em cada cabeçalho.
 - **Timestamp:** script grava "Última cotação: DD/MM/AAAA HH:MM" na linha do nome do distribuidor toda vez que roda.
 - **OAuth Sheets API:** configurado 09/jul/2026 (`credentials.json`/`token.json` no repo, gitignorado). Projeto Google Cloud usado: `mindful-hall-501916-s4` (diferente do suspenso por abuso). App em modo "Teste" — `ghumberto.eng@gmail.com` já cadastrado como test user (limite 100 usuários, não precisa publicar).
 - **Script ativo:** `preencher_planilha_precificacao.py <spreadsheet_id> <analise.json> --bransales X --cantu X --gp X --green X` — **`precificacao_gsheets.py` é o script antigo, deprecado, não usar.**
