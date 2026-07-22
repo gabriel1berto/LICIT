@@ -54,6 +54,42 @@ def carregar_editais() -> pd.DataFrame:
     return df
 
 
+def carregar_itens_onco() -> pd.DataFrame:
+    """1 linha por item confirmado como medicamento oncológico (eh_medicamento_onco=TRUE),
+    já cruzado com o edital (UF/órgão/modalidade) e o resultado (preço/fornecedor
+    homologado), quando existir. Coleta ainda em andamento — cobertura parcial,
+    ver dashboard pra % processado."""
+    df = pd.read_sql_query(
+        """
+        SELECT i.numero_controle_pncp, i.numero_item, i.descricao, i.principio_ativo_provavel,
+               i.valor_unitario_estimado, i.valor_total, i.quantidade, i.unidade_medida,
+               i.tem_resultado,
+               e.uf, e.orgao_nome, e.modalidade_licitacao_nome,
+               r.nome_fornecedor, r.valor_unitario_homologado, r.valor_total_homologado,
+               r.percentual_desconto
+        FROM oncologia.itens i
+        JOIN oncologia.editais e ON e.numero_controle_pncp = i.numero_controle_pncp
+        LEFT JOIN oncologia.resultados r
+               ON r.numero_controle_pncp = i.numero_controle_pncp AND r.numero_item = i.numero_item
+        WHERE i.eh_medicamento_onco = TRUE
+        """,
+        ENGINE,
+    )
+    return df
+
+
+def cobertura_detalhe() -> tuple[int, int, float]:
+    """(processos com detalhe já baixado, total na fila, %) — mesmo padrão de
+    cobertura_pct() do pneu, adaptado pro schema oncologia."""
+    with ENGINE.connect() as con:
+        feito = pd.read_sql_query(
+            "SELECT COUNT(*) n FROM oncologia.progresso_detalhe WHERE status='feito'", con
+        )["n"][0]
+        total = pd.read_sql_query("SELECT COUNT(*) n FROM oncologia.progresso_detalhe", con)["n"][0]
+    pct = (feito / total * 100) if total else 0.0
+    return feito, total, pct
+
+
 def cobertura_vocabulario() -> pd.DataFrame:
     """1 linha por termo buscado — total real na API vs quando foi buscado."""
     return pd.read_sql_query(
