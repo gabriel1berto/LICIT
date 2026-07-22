@@ -1,0 +1,33 @@
+name: Oncologia Coletor — Detalhe (fase 2)
+
+on:
+  schedule:
+    - cron: '0 1,7,13,19 * * *'   # 4x/dia — fila grande (6k+ editais), roda mais vezes que editais
+  workflow_dispatch:
+
+concurrency:
+  group: onco-coletor-detalhe
+  cancel-in-progress: false
+
+jobs:
+  coleta_detalhe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330   # 5h30 — margem sob o teto de 6h da Actions
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r analise_onco/requirements.txt
+
+      - name: Rodar coletor de detalhe oncológico (fase 2)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: analise_onco
+        run: python coletor_onco_detalhe.py

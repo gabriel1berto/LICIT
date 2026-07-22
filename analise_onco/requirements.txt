@@ -1,0 +1,8 @@
+curl_cffi>=0.7.0
+requests>=2.31.0
+pandas>=2.2,<3
+plotly>=5.20
+streamlit>=1.38
+psycopg2-binary>=2.9
+sqlalchemy>=2.0
+python-dotenv>=1.0

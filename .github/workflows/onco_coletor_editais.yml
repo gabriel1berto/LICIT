@@ -1,0 +1,29 @@
+name: Oncologia Coletor — Editais (fase 1)
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # 04:00 UTC (~01h BRT) — roda os termos de vocabulário de novo
+  workflow_dispatch:
+
+jobs:
+  coleta_editais:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r analise_onco/requirements.txt
+
+      - name: Rodar coletor de editais oncológicos (fase 1)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: analise_onco
+        run: python coletor_onco.py
