@@ -118,18 +118,19 @@ def processar(con, cur, numero_controle: str):
         cur.execute("""
             INSERT INTO oncologia.detalhes (
                 numero_controle_pncp, valor_total_estimado, valor_total_homologado, srp,
-                objeto_compra, municipio_nome, uf_sigla, modalidade_nome,
+                objeto_compra, municipio_nome, uf_sigla, codigo_ibge, modalidade_nome,
                 situacao_compra_nome, existe_resultado, data_abertura_proposta,
                 data_encerramento_proposta, coletado_em
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (numero_controle_pncp) DO UPDATE SET
                 valor_total_estimado = excluded.valor_total_estimado,
                 valor_total_homologado = excluded.valor_total_homologado,
+                codigo_ibge = excluded.codigo_ibge,
                 existe_resultado = excluded.existe_resultado
         """, (
             numero_controle, detalhe.get("valorTotalEstimado"), detalhe.get("valorTotalHomologado"),
             bool(detalhe.get("srp")), detalhe.get("objetoCompra"),
-            uo.get("municipioNome"), uo.get("ufSigla"), detalhe.get("modalidadeNome"),
+            uo.get("municipioNome"), uo.get("ufSigla"), uo.get("codigoIbge"), detalhe.get("modalidadeNome"),
             detalhe.get("situacaoCompraNome"), bool(detalhe.get("existeResultado")),
             detalhe.get("dataAberturaProposta"), detalhe.get("dataEncerramentoProposta"),
             datetime.now(timezone.utc).isoformat(),
