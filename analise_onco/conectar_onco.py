@@ -54,6 +54,103 @@ def cobertura_pct() -> tuple[int, int, float]:
     return feito, total, pct
 
 
+def carregar_editais_abertos_onco() -> pd.DataFrame:
+    """Espelha conectar_pncp.carregar_editais_abertos() do pneu — 1 linha por
+    edital com proposta ainda aberta e pelo menos 1 item eh_medicamento_onco=TRUE.
+
+    Diferença deliberada: SEM teto de valor por item (o do pneu era R$50k, calibrado
+    pra bug de digitação em pneu/câmara de ar — medicamento oncológico legitimamente
+    custa dezenas de milhares por unidade em biológico/alvo molecular, um teto copiado
+    do pneu descartaria item real). Sem lista de PROCESSOS_EXCLUIDOS também — essa
+    lista veio de auditoria manual específica do pneu, nunca feita aqui.
+    """
+    df = pd.read_sql_query(
+        """
+        SELECT e.numero_controle_pncp, e.orgao_cnpj, e.ano, e.numero_sequencial,
+               e.uf, e.municipio_nome AS municipio, e.orgao_nome, e.modalidade_licitacao_nome,
+               d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
+               d.data_encerramento_proposta, d.codigo_ibge, d.srp,
+               COUNT(i.numero_item) FILTER (WHERE i.eh_medicamento_onco) AS n_itens_onco,
+               SUM(i.valor_total) FILTER (WHERE i.eh_medicamento_onco) AS valor_onco_estimado,
+               (SELECT COUNT(*) FROM oncologia.itens i2 WHERE i2.numero_controle_pncp = e.numero_controle_pncp) AS n_itens_total
+        FROM oncologia.editais e
+        JOIN oncologia.detalhes d ON d.numero_controle_pncp = e.numero_controle_pncp
+        JOIN oncologia.itens i ON i.numero_controle_pncp = e.numero_controle_pncp
+        WHERE d.situacao_compra_nome = 'Divulgada no PNCP'
+          AND d.data_encerramento_proposta IS NOT NULL
+          AND d.data_encerramento_proposta::timestamp > (now() AT TIME ZONE 'America/Sao_Paulo')
+          AND i.eh_medicamento_onco = TRUE
+          AND e.modalidade_licitacao_nome NOT ILIKE '%%leil%%'
+        GROUP BY e.numero_controle_pncp, e.orgao_cnpj, e.ano, e.numero_sequencial, e.uf,
+                 e.municipio_nome, e.orgao_nome, e.modalidade_licitacao_nome,
+                 d.objeto_compra, d.valor_total_estimado, d.data_abertura_proposta,
+                 d.data_encerramento_proposta, d.codigo_ibge, d.srp
+        """,
+        ENGINE,
+    )
+    if df.empty:
+        return df
+
+    # mesmo achado de retificação do pneu (edital republicado gera numero_controle_pncp
+    # novo) — mantém a versão mais recente, chave por valor+encerramento.
+    df = df.sort_values("numero_controle_pncp")
+    chave_dedup = (
+        df["orgao_cnpj"] + "|" + df["valor_total_estimado"].astype(str) + "|"
+        + df["data_encerramento_proposta"].astype(str)
+    )
+    df = df[~chave_dedup.duplicated(keep="last")]
+
+    df["data_encerramento_proposta"] = pd.to_datetime(df["data_encerramento_proposta"])
+    agora_brt = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None)
+    df["dias_restantes"] = (df["data_encerramento_proposta"] - agora_brt).dt.total_seconds() / 86400
+    df["regime"] = df["srp"].apply(lambda v: "RP" if v else "CD")
+    df["pncp_url"] = (
+        "https://pncp.gov.br/app/editais/" + df["orgao_cnpj"] + "/" + df["ano"] + "/" + df["numero_sequencial"]
+    )
+    df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")
+    return df
+
+
+def carregar_itens_onco_editais_abertos(numeros_controle: list[str]) -> pd.DataFrame:
+    """Espelha carregar_itens_pneu_editais_abertos() do pneu."""
+    if not numeros_controle:
+        return pd.DataFrame(columns=["numero_controle_pncp", "descricao", "quantidade", "principio_ativo_provavel"])
+    df = pd.read_sql_query(
+        """
+        SELECT numero_controle_pncp, descricao, quantidade, valor_unitario_estimado, principio_ativo_provavel
+        FROM oncologia.itens
+        WHERE eh_medicamento_onco = TRUE AND numero_controle_pncp = ANY(%(nums)s)
+        """,
+        ENGINE,
+        params={"nums": list(numeros_controle)},
+    )
+    return df
+
+
+def carregar_capag_municipios() -> pd.DataFrame:
+    """Espelha conectar_pncp.carregar_capag_municipios() — mesmo schema `capag`
+    (compartilhado entre pneu e oncológico, dado não é específico de negócio)."""
+    df = pd.read_sql_query(
+        "SELECT codigo_ibge, uf, capag FROM capag.municipios", ENGINE
+    )
+    df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")
+    return df
+
+
+def carregar_capag_estados() -> pd.DataFrame:
+    return pd.read_sql_query("SELECT uf, capag FROM capag.estados", ENGINE)
+
+
+def ultima_carga_detalhes() -> pd.Timestamp | None:
+    """Timestamp (BRT) da coleta mais recente em oncologia.detalhes — espelha
+    conectar_pncp.ultima_carga_detalhes() do pneu."""
+    with ENGINE.connect() as con:
+        v = con.execute(text("SELECT MAX(coletado_em) FROM oncologia.detalhes")).fetchone()[0]
+    if v is None:
+        return None
+    return pd.Timestamp(v).tz_convert("America/Sao_Paulo")
+
+
 def _classificar_tipo(modalidade: str) -> str:
     if not isinstance(modalidade, str) or not modalidade:
         return "Outro"

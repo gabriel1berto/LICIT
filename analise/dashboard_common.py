@@ -13,9 +13,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from conectar_pncp import (
-    carregar_base_pncp, carregar_editais_abertos as _carregar_editais_abertos,
+    carregar_base_pncp, carregar_capag_estados as _carregar_capag_estados,
+    carregar_capag_municipios as _carregar_capag_municipios,
+    carregar_editais_abertos as _carregar_editais_abertos,
     carregar_fornecedores_resultado, carregar_itens_pneu_editais_abertos as _carregar_itens_pneu_editais_abertos,
-    cobertura_por_uf, cobertura_pct,
+    cobertura_por_uf, cobertura_pct, ultima_carga_detalhes as _ultima_carga_detalhes,
 )
 from conectar_cotacao_master import (
     carregar_cotacoes as _carregar_cotacoes_master,
@@ -155,6 +157,55 @@ def carregar_cobertura_uf() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def carregar_editais_abertos() -> pd.DataFrame:
     return _carregar_editais_abertos()
+
+
+@st.cache_data(ttl=300)
+def carregar_ultima_carga_detalhes() -> pd.Timestamp | None:
+    return _ultima_carga_detalhes()
+
+
+@st.cache_data(ttl=3600)
+def carregar_capag_municipios() -> pd.DataFrame:
+    return _carregar_capag_municipios()
+
+
+@st.cache_data(ttl=3600)
+def carregar_capag_estados() -> pd.DataFrame:
+    return _carregar_capag_estados()
+
+
+# Notas sem classificação de risco real (Tesouro não teve dado suficiente pro
+# município naquele ano) — nunca tratar como "D" (pior nota real), é ausência
+# de informação, não confiabilidade baixa confirmada.
+_CAPAG_SEM_DADO = {"#N/A", "n.d.", "n.e.", None}
+_CAPAG_BOA   = {"A+", "A"}
+_CAPAG_MEDIA = {"B+", "B"}
+_CAPAG_RUIM  = {"C", "D"}
+
+
+def cor_capag(nota: str | None) -> str | None:
+    if nota in _CAPAG_BOA:
+        return COR_STATUS_GOOD
+    if nota in _CAPAG_MEDIA:
+        return COR_STATUS_WARNING
+    if nota in _CAPAG_RUIM:
+        return COR_STATUS_CRITICAL
+    return None
+
+
+def capag_do_orgao(codigo_ibge, uf: str | None, mapa_mun: dict, mapa_uf: dict) -> tuple[str | None, str]:
+    """(nota, origem) — tenta município (mais específico, é a prefeitura/órgão real),
+    cai pra nota do estado quando o município não tem linha (órgão sem codigo_ibge
+    reconhecido, ou fora da posição 2026-jun do dataset). origem = 'municipio'|'estado'|''."""
+    if codigo_ibge is not None and not pd.isna(codigo_ibge):
+        nota = mapa_mun.get(int(codigo_ibge))
+        if nota is not None and nota not in _CAPAG_SEM_DADO:
+            return nota, "município"
+    if uf:
+        nota = mapa_uf.get(uf)
+        if nota is not None and nota not in _CAPAG_SEM_DADO:
+            return nota, "estado"
+    return None, ""
 
 
 @st.cache_data(ttl=300)

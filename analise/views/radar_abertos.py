@@ -13,8 +13,10 @@ import streamlit as st
 
 from dashboard_common import (
     COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING,
-    carregar_base, carregar_cotacao_master, carregar_editais_abertos,
-    carregar_itens_pneu_editais_abertos, carregar_lat_lon, fmt_abrev, fundo_transparente,
+    capag_do_orgao, carregar_base, carregar_capag_estados, carregar_capag_municipios,
+    carregar_cotacao_master, carregar_editais_abertos,
+    carregar_itens_pneu_editais_abertos, carregar_lat_lon, carregar_ultima_carga_detalhes,
+    cor_capag, fmt_abrev, fundo_transparente,
 )
 from ui_explicacao import cabecalho_pagina, regra
 
@@ -24,6 +26,11 @@ from ui_explicacao import cabecalho_pagina, regra
 MULTIPLICADOR_PRECO_VENDA = 1.348
 
 st.title("🗂️ Radar de Editais")
+
+_ultima_carga = carregar_ultima_carga_detalhes()
+if _ultima_carga is not None:
+    st.caption(f"📥 Dado carregado até: {_ultima_carga.strftime('%d/%m/%Y %H:%M')} (BRT)")
+
 cabecalho_pagina(
     pergunta="Quais editais com item de pneu estão com proposta aberta agora, e quanto "
     "tempo falta pra decidir participar?",
@@ -65,7 +72,13 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "CLAUDE.md §5 — é o menor preço visto em qualquer dia do histórico da Cotação "
         "Fornecedor, não necessariamente o de hoje). Só cobre as medidas já cotadas na "
         "Cotação Fornecedor — fora disso aparece \"sem cotação\". É sinal probabilístico, "
-        "não garantia: concorrente pode ter custo que não monitoramos."
+        "não garantia: concorrente pode ter custo que não monitoramos.\n\n"
+        "**CAPAG** (adicionado 22/jul/2026): nota de capacidade de pagamento do Tesouro "
+        "Nacional (dívida/poupança corrente/liquidez do órgão pagador, ano base 2025) — "
+        "🟢 A+/A · 🟡 B+/B · 🔴 C/D. Tenta casar pelo município do órgão primeiro; sem "
+        "linha aí, cai pra nota do estado. Sinal de risco de **calote/atraso no pagamento "
+        "depois de vencer**, não de qualidade do edital em si — nunca decide sozinho se "
+        "vale participar."
     )
 
 editais = carregar_editais_abertos()
@@ -103,6 +116,11 @@ if editais.empty:
     st.stop()
 
 st.caption(f"{len(editais)} edital(is) aberto(s) com item de pneu, nesse filtro.")
+
+_capag_mun = carregar_capag_municipios()
+_capag_uf = carregar_capag_estados()
+MAPA_CAPAG_MUN = dict(zip(_capag_mun["codigo_ibge"], _capag_mun["capag"]))
+MAPA_CAPAG_UF = dict(zip(_capag_uf["uf"], _capag_uf["capag"]))
 
 # Status (não categórico) — cor reservada de urgência, sempre com ícone+label junto
 # (skill dataviz, "status color nunca sozinha"). Bucket mais perto de 0 = mais crítico.
@@ -241,6 +259,15 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
                 if contagem_orgao.get(row["orgao_nome"], 0) > 1:
                     orgao_label += " 🔁"
                 st.caption(f"**{orgao_label}** — {row['municipio']}/{row['uf']}")
+                nota_capag, origem_capag = capag_do_orgao(
+                    row["codigo_ibge"], row["uf"], MAPA_CAPAG_MUN, MAPA_CAPAG_UF
+                )
+                if nota_capag:
+                    cor = cor_capag(nota_capag)
+                    icone_capag = "🟢" if cor == COR_STATUS_GOOD else "🟡" if cor == COR_STATUS_WARNING else "🔴"
+                    st.caption(f"{icone_capag} CAPAG {nota_capag} ({origem_capag})")
+                else:
+                    st.caption("⚪ CAPAG sem dado")
                 valor_pneu = row["valor_pneu_estimado"]
                 if pd.isna(valor_pneu) or valor_pneu == 0:
                     # achado 17/jul/26 (auditoria de confiança do card): alguns órgãos

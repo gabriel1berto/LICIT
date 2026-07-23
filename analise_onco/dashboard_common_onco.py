@@ -14,8 +14,13 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from conectar_onco import (
-    carregar_base_onco, carregar_fornecedores_resultado,
+    carregar_base_onco, carregar_capag_estados as _carregar_capag_estados,
+    carregar_capag_municipios as _carregar_capag_municipios,
+    carregar_editais_abertos_onco as _carregar_editais_abertos_onco,
+    carregar_fornecedores_resultado,
+    carregar_itens_onco_editais_abertos as _carregar_itens_onco_editais_abertos,
     carregar_lat_lon, cobertura_por_uf, cobertura_pct,
+    ultima_carga_detalhes as _ultima_carga_detalhes,
 )
 
 SQL_DIR = Path(__file__).parent
@@ -59,6 +64,12 @@ DIVERGING_POLO_POS = "#2a78d6"
 
 COR_INK_DARK  = "#c3c2b7"
 COR_GRID_DARK = "#3a3a37"
+
+# Status palette (skill dataviz) — mesma constante do analise/dashboard_common.py,
+# reservada pra estado/urgência, sempre com ícone+label junto.
+COR_STATUS_CRITICAL = "#d03b3b"
+COR_STATUS_WARNING  = "#fab219"
+COR_STATUS_GOOD      = "#0ca30c"
 
 
 def cor_categorica_ordenada(rotulos_em_ordem: list[str]) -> dict[str, str]:
@@ -125,6 +136,60 @@ def carregar_lat_lon_cached() -> pd.DataFrame:
     return carregar_lat_lon()
 
 
+@st.cache_data(ttl=300)
+def carregar_editais_abertos_onco() -> pd.DataFrame:
+    return _carregar_editais_abertos_onco()
+
+
+@st.cache_data(ttl=300)
+def carregar_itens_onco_editais_abertos(numeros_controle: tuple[str, ...]) -> pd.DataFrame:
+    return _carregar_itens_onco_editais_abertos(list(numeros_controle))
+
+
+@st.cache_data(ttl=300)
+def carregar_ultima_carga_detalhes() -> pd.Timestamp | None:
+    return _ultima_carga_detalhes()
+
+
+@st.cache_data(ttl=3600)
+def carregar_capag_municipios() -> pd.DataFrame:
+    return _carregar_capag_municipios()
+
+
+@st.cache_data(ttl=3600)
+def carregar_capag_estados() -> pd.DataFrame:
+    return _carregar_capag_estados()
+
+
+_CAPAG_SEM_DADO = {"#N/A", "n.d.", "n.e.", None}
+_CAPAG_BOA   = {"A+", "A"}
+_CAPAG_MEDIA = {"B+", "B"}
+_CAPAG_RUIM  = {"C", "D"}
+
+
+def cor_capag(nota: str | None) -> str | None:
+    if nota in _CAPAG_BOA:
+        return COR_STATUS_GOOD
+    if nota in _CAPAG_MEDIA:
+        return COR_STATUS_WARNING
+    if nota in _CAPAG_RUIM:
+        return COR_STATUS_CRITICAL
+    return None
+
+
+def capag_do_orgao(codigo_ibge, uf: str | None, mapa_mun: dict, mapa_uf: dict) -> tuple[str | None, str]:
+    """Espelha dashboard_common.capag_do_orgao() do pneu."""
+    if codigo_ibge is not None and not pd.isna(codigo_ibge):
+        nota = mapa_mun.get(int(codigo_ibge))
+        if nota is not None and nota not in _CAPAG_SEM_DADO:
+            return nota, "município"
+    if uf:
+        nota = mapa_uf.get(uf)
+        if nota is not None and nota not in _CAPAG_SEM_DADO:
+            return nota, "estado"
+    return None, ""
+
+
 # ── Filtro compartilhado ──────────────────────────────────────────────────
 
 def preparar_pagina_onco():
@@ -137,6 +202,10 @@ def preparar_pagina_onco():
         "Recarregue a página (F5) pra ver dado mais recente — cache expira a cada 5min."
     )
     st.progress(min(pct / 100, 1.0))
+
+    ultima_carga = carregar_ultima_carga_detalhes()
+    if ultima_carga is not None:
+        st.caption(f"📥 Dado carregado até: {ultima_carga.strftime('%d/%m/%Y %H:%M')} (BRT)")
 
     base = carregar_base()
     if base.empty:

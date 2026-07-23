@@ -7,3 +7,5 @@ gp_cookies.json
 !medidas_prioritarias.json
 dados/*/*.csv
 analise/pncp_raw.db
+dados_capag/
+*.log

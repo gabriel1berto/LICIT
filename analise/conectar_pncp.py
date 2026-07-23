@@ -106,6 +106,33 @@ def cobertura_pct() -> tuple[int, int, float]:
     return feito, total, pct
 
 
+def carregar_capag_municipios() -> pd.DataFrame:
+    """1 linha por município: codigo_ibge, uf, capag (nota A+..D, Tesouro Nacional,
+    ano base 2025). Fonte: dados_capag/, importado 1x (ver importar_capag.py)."""
+    df = pd.read_sql_query(
+        "SELECT codigo_ibge, uf, capag FROM capag.municipios", ENGINE
+    )
+    df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")
+    return df
+
+
+def carregar_capag_estados() -> pd.DataFrame:
+    """1 linha por UF: capag (nota, ano base 2025) — fallback quando o município
+    do órgão não bate nenhuma linha de capag.municipios."""
+    return pd.read_sql_query("SELECT uf, capag FROM capag.estados", ENGINE)
+
+
+def ultima_carga_detalhes() -> pd.Timestamp | None:
+    """Timestamp (BRT) da coleta mais recente em `detalhes` — última rodada
+    bem-sucedida do coletor_pncp_detalhe.py (fase 2, é ele que alimenta situação/
+    valores/prazo usados no Radar de Editais Abertos)."""
+    with ENGINE.connect() as con:
+        v = con.execute(text("SELECT MAX(coletado_em) FROM detalhes")).fetchone()[0]
+    if v is None:
+        return None
+    return pd.Timestamp(v).tz_convert("America/Sao_Paulo")
+
+
 def _classificar_tipo(modalidade: str) -> str:
     if not isinstance(modalidade, str) or not modalidade:
         return "Outro"
