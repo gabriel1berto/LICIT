@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Página de vitrine — mostra o que o LICIT já faz na vertical de pneus (a outra
-vertical da empresa, além da oncológica) e ainda não foi trazido pro oncológico.
-Nomenclatura pensada pra quem só conhece o dashboard de oncológico (não assume
-familiaridade prévia com "pneu" como nome de projeto). Conteúdo institucional/
-estático, não puxa dado real de negócio (preço, margem, cliente) — só descreve
-capacidade da plataforma."""
+"""Página de vitrine — mostra funcionalidades que a plataforma LICIT já sabe construir
+(validadas em produção em outro contexto) como POSSIBILIDADES pro oncológico, sem
+referenciar o outro dashboard/vertical pelo nome — cada card se sustenta sozinho como
+capacidade que pode ser trazida pra cá, não como "olha o que já existe ali". Conteúdo
+institucional/estático, não puxa dado real de negócio (preço, margem, cliente)."""
 
 import streamlit as st
 
 from dashboard_common_onco import COR_STATUS_GOOD, COR_STATUS_WARNING
 
-st.title("✨ Mais no LICIT")
+st.title("✨ Possibilidades pro LICIT Oncológico")
 st.caption(
-    "Esse dashboard de oncológico é 1 fatia da plataforma LICIT. A LICIT também opera "
-    "uma vertical de **venda de pneus para o governo via licitação** (o negócio original "
-    "da empresa, hoje mais maduro) — já roda tudo isso abaixo nessa vertical de pneus."
+    "Essas são capacidades que a plataforma LICIT já sabe construir — validadas em "
+    "produção, prontas pra serem trazidas pro oncológico como próxima prioridade, não "
+    "como tecnologia nova a inventar."
 )
 
 st.divider()
@@ -22,7 +21,7 @@ st.divider()
 
 def _cartao(icone: str, titulo: str, descricao: str, status: str = "ativo"):
     cor = COR_STATUS_GOOD if status == "ativo" else COR_STATUS_WARNING
-    label = "🟢 Ativo na vertical de pneus" if status == "ativo" else "🟡 Em teste na vertical de pneus"
+    label = "💡 Possibilidade validada" if status == "ativo" else "🧪 Possibilidade em validação"
     with st.container(border=True):
         st.markdown(
             f'<div style="height:4px;background:{cor};border-radius:2px;margin-bottom:10px;"></div>',
@@ -38,9 +37,9 @@ col1, col2 = st.columns(2)
 with col1:
     _cartao(
         "🏭", "Cotação de Fornecedor em tempo real",
-        "5 distribuidores (Bransales, Cantu, GP Fácil, PneuGreen, Della Via) cotados "
-        "**todo dia**, sem intervenção manual. Histórico de preço por medida, tendência "
-        "ao longo do tempo, alerta de alias novo/suspeito filtrado automaticamente.",
+        "Vários distribuidores cotados **todo dia**, sem intervenção manual. Histórico "
+        "de preço por produto, tendência ao longo do tempo, alerta de alias novo/"
+        "suspeito filtrado automaticamente.",
     )
     _cartao(
         "🎯", "\"Meu preço\" x mercado, item por item",
@@ -56,17 +55,17 @@ with col1:
         "pronto no Notion, com aviso de qual próximo passo tomar.",
     )
     _cartao(
-        "🔬", "Verificação INMETRO automatizada",
-        "Busca automática no ProdCert (Inmetro) por marca/medida antes de fechar proposta "
-        "— confirma que o produto escolhido tem registro válido, sem checar manualmente "
-        "site por site.",
+        "🔬", "Verificação de registro/certificação automatizada",
+        "Busca automática por registro oficial do órgão regulador competente, por marca/"
+        "produto, antes de fechar proposta — confirma que o produto escolhido tem "
+        "certificação válida, sem checar manualmente site por site.",
     )
 
 with col2:
     _cartao(
         "📊", "Planilha de precificação dinâmica",
-        "4 blocos de cotação lado a lado, altura que se ajusta ao tamanho real do edital, "
-        "coluna \"Vencedor\" calculada automaticamente comparando os 4 distribuidores — "
+        "Blocos de cotação lado a lado, altura que se ajusta ao tamanho real do edital, "
+        "coluna \"Vencedor\" calculada automaticamente comparando os distribuidores — "
         "zero copy-paste, gerada do zero a cada rodada.",
     )
     _cartao(
@@ -78,19 +77,18 @@ with col2:
     )
     _cartao(
         "🤖", "Radar por email, todo dia útil",
-        "5h da manhã, todo dia útil: edital novo da vertical de pneus cai na caixa de "
-        "entrada antes de qualquer concorrente abrir o PNCP. Zero busca manual.",
+        "5h da manhã, todo dia útil: edital novo cai na caixa de entrada antes de "
+        "qualquer concorrente abrir o PNCP. Zero busca manual.",
     )
     _cartao(
         "💳", "CAPAG — confiabilidade do órgão",
         "Nota de capacidade de pagamento (Tesouro Nacional) direto no card do Radar de "
-        "Editais. **Essa aqui já chegou no oncológico também** — primeira funcionalidade "
-        "cruzada entre as duas linhas.",
+        "Editais — já ativa aqui no oncológico também.",
     )
 
 st.divider()
 st.markdown(
-    "Tudo isso já roda em produção na vertical de pneus — trazer pro oncológico é questão "
-    "de **prioridade**, não de tecnologia nova pra inventar. A base (coleta PNCP, radar, "
-    "CAPAG) já é a mesma plataforma por trás das duas verticais."
+    "Tudo isso já foi construído e validado em produção pela plataforma LICIT — trazer "
+    "essas possibilidades pro oncológico é questão de **prioridade**, não de tecnologia "
+    "nova pra inventar."
 )
