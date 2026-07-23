@@ -72,6 +72,10 @@ GENERICOS = [
     "Venetoclaxe", "Olaparibe", "Niraparibe", "Eribulina", "Lenalidomida",
     "Tamoxifeno", "Letrozol", "Anastrozol", "Exemestano", "Leuprorrelina",
     "Goserrelina", "Denosumabe", "Enzalutamida",
+    # Adicionados 23/jul/2026 (double-check falso-negativo — fármaco oncológico
+    # real com volume confirmado na API do PNCP, ausente do vocabulário até então):
+    "Bicalutamida", "Fulvestranto", "Everolimo", "Avelumabe", "Carfilzomibe",
+    "Trametinibe", "Lapatinibe", "Apalutamida", "Ixazomibe",
 ]
 
 MARCAS = [

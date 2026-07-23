@@ -29,6 +29,9 @@ pagina = st.navigation({
         st.Page("views/fornecedores.py", title="Fornecedores e Preço", icon="🏭"),
         st.Page("views/cobertura_termos.py", title="Cobertura de Termos", icon="🔤"),
     ],
+    "✨ Mais no LICIT": [
+        st.Page("views/mais_no_licit.py", title="Mais no LICIT", icon="✨"),
+    ],
 })
 
 pagina.run()

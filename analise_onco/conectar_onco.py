@@ -183,13 +183,30 @@ def carregar_base_onco() -> pd.DataFrame:
 
     detalhes = pd.read_sql_query(
         """
-        SELECT numero_controle_pncp, uf_sigla AS uf, municipio_nome AS municipio,
-               codigo_ibge, modalidade_nome, srp, data_abertura_proposta,
-               valor_total_estimado
-        FROM oncologia.detalhes
+        SELECT d.numero_controle_pncp, d.uf_sigla AS uf, d.municipio_nome AS municipio,
+               d.codigo_ibge, d.modalidade_nome, d.srp, d.data_abertura_proposta,
+               d.valor_total_estimado, e.orgao_cnpj
+        FROM oncologia.detalhes d
+        JOIN oncologia.editais e ON e.numero_controle_pncp = d.numero_controle_pncp
         """,
         ENGINE,
     )
+
+    # achado 23/jul/2026 (double-check "valor total parece inflado"): mesmo bug de
+    # retificação já corrigido no pneu (08/jul/2026, ver conectar_pncp.carregar_base_pncp)
+    # nunca foi portado pra cá — edital republicado no PNCP gera numero_controle_pncp
+    # novo pro MESMO processo (mesmo órgão, mesma data de abertura, mesmo valor total).
+    # Mantém só 1 por (órgão, data abertura, valor total) — o de menor numero_controle_pncp.
+    detalhes = detalhes.sort_values("numero_controle_pncp")
+    _chave_retificacao = pd.DataFrame({
+        "cnpj": detalhes["orgao_cnpj"], "data": detalhes["data_abertura_proposta"],
+        "valor": detalhes["valor_total_estimado"],
+    }, index=detalhes.index)
+    _mantidos = (
+        ~_chave_retificacao.duplicated(keep="first")
+        | _chave_retificacao["data"].isna() | _chave_retificacao["valor"].isna()
+    )
+    detalhes = detalhes[_mantidos].drop(columns="orgao_cnpj")
 
     resultados = pd.read_sql_query(
         """
@@ -208,6 +225,25 @@ def carregar_base_onco() -> pd.DataFrame:
 
     df = itens.merge(detalhes, on="numero_controle_pncp", how="inner")
     df = df.merge(resultados_principal, on=["numero_controle_pncp", "numero_item"], how="left")
+
+    # achado 23/jul/2026: MESMA linha de item (fármaco+preço unitário+quantidade+data)
+    # publicada sob 2 CNPJs diferentes do MESMO ente (ex: "Estado da Bahia" e "Fundo
+    # Estadual de Saúde do Estado da Bahia" — 79 grupos, R$114,6 milhões, itens judiciais)
+    # — a dedup por órgão acima não pega isso porque o CNPJ é diferente. Mantém 1 por
+    # (fármaco, valor unitário, quantidade, data de abertura), menor numero_controle_pncp.
+    # Risco aceito: colapsa também coincidência real (2 estados diferentes comprando a
+    # mesma quantidade pelo mesmo preço no mesmo dia) — extremamente improvável dado
+    # preço com 2-4 casas decimais, mas é uma escolha, não uma certeza matemática.
+    df = df.sort_values("numero_controle_pncp")
+    _chave_cross_cnpj = pd.DataFrame({
+        "principio": df["principio_ativo_provavel"], "vu": df["valor_unitario_estimado"],
+        "qtd": df["quantidade"], "data": df["data_abertura_proposta"],
+    }, index=df.index)
+    _mantidos_item = (
+        ~_chave_cross_cnpj.duplicated(keep="first")
+        | _chave_cross_cnpj["vu"].isna() | _chave_cross_cnpj["qtd"].isna() | _chave_cross_cnpj["data"].isna()
+    )
+    df = df[_mantidos_item]
 
     df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")
     df["data_abertura_proposta"] = pd.to_datetime(df["data_abertura_proposta"], errors="coerce", utc=True)
