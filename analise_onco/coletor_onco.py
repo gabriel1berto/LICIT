@@ -80,7 +80,13 @@ GENERICOS = [
 
 MARCAS = [
     "Zelboraf", "Enhertu", "Keytruda", "Opdivo", "Herceptin", "Avastin",
-    "Glivec", "Revlimid", "Zytiga", "Xtandi", "Ibrance", "Tagrisso", "Sutent",
+    "Glivec", "Revlimid", "Zytiga", "Xtandi", "Ibrance", "Tagrisso",
+    # "Sutent" removido 23/jul/2026 (double-check profundo): substring de
+    # "SUTENTACAO"/"SUTENTAVEL" — erro de grafia comum de "sustentação"/
+    # "sustentável" em português. 100% dos matches eram colisão real (palco,
+    # tenda, aluguel de imóvel, secretaria de desenvolvimento sustentável),
+    # zero compra real do fármaco na amostra. Genérico "Sunitinibe" já cobre
+    # a droga de verdade sem esse risco.
 ]
 
 

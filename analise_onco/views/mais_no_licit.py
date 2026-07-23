@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Página de vitrine — mostra o que o LICIT já faz pro pneu e ainda não foi
-trazido pro oncológico. Conteúdo institucional/estático, não puxa dado real
-de negócio (preço, margem, cliente) — só descreve capacidade da plataforma."""
+"""Página de vitrine — mostra o que o LICIT já faz na vertical de pneus (a outra
+vertical da empresa, além da oncológica) e ainda não foi trazido pro oncológico.
+Nomenclatura pensada pra quem só conhece o dashboard de oncológico (não assume
+familiaridade prévia com "pneu" como nome de projeto). Conteúdo institucional/
+estático, não puxa dado real de negócio (preço, margem, cliente) — só descreve
+capacidade da plataforma."""
 
 import streamlit as st
 
@@ -9,8 +12,9 @@ from dashboard_common_onco import COR_STATUS_GOOD, COR_STATUS_WARNING
 
 st.title("✨ Mais no LICIT")
 st.caption(
-    "Esse dashboard de oncológico é 1 fatia da plataforma LICIT. No pneu — onde a LICIT "
-    "efetivamente compra e vende — já roda tudo isso abaixo."
+    "Esse dashboard de oncológico é 1 fatia da plataforma LICIT. A LICIT também opera "
+    "uma vertical de **venda de pneus para o governo via licitação** (o negócio original "
+    "da empresa, hoje mais maduro) — já roda tudo isso abaixo nessa vertical de pneus."
 )
 
 st.divider()
@@ -18,7 +22,7 @@ st.divider()
 
 def _cartao(icone: str, titulo: str, descricao: str, status: str = "ativo"):
     cor = COR_STATUS_GOOD if status == "ativo" else COR_STATUS_WARNING
-    label = "🟢 Ativo no pneu" if status == "ativo" else "🟡 Em teste no pneu"
+    label = "🟢 Ativo na vertical de pneus" if status == "ativo" else "🟡 Em teste na vertical de pneus"
     with st.container(border=True):
         st.markdown(
             f'<div style="height:4px;background:{cor};border-radius:2px;margin-bottom:10px;"></div>',
@@ -74,8 +78,8 @@ with col2:
     )
     _cartao(
         "🤖", "Radar por email, todo dia útil",
-        "5h da manhã, todo dia útil: edital novo de pneu cai na caixa de entrada antes "
-        "de qualquer concorrente abrir o PNCP. Zero busca manual.",
+        "5h da manhã, todo dia útil: edital novo da vertical de pneus cai na caixa de "
+        "entrada antes de qualquer concorrente abrir o PNCP. Zero busca manual.",
     )
     _cartao(
         "💳", "CAPAG — confiabilidade do órgão",
@@ -86,7 +90,7 @@ with col2:
 
 st.divider()
 st.markdown(
-    "Tudo isso já roda em produção pro pneu — trazer pro oncológico é questão de "
-    "**prioridade**, não de tecnologia nova pra inventar. A base (coleta PNCP, radar, "
-    "CAPAG) já é a mesma plataforma por trás dos dois."
+    "Tudo isso já roda em produção na vertical de pneus — trazer pro oncológico é questão "
+    "de **prioridade**, não de tecnologia nova pra inventar. A base (coleta PNCP, radar, "
+    "CAPAG) já é a mesma plataforma por trás das duas verticais."
 )

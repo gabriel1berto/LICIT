@@ -34,6 +34,23 @@ RE_PREFIXO_IGNORAR = (
     r"(?:(?:lote\s+)?\d{1,10}\s*[-–]\s*)?"                              # "0006648 - " / "Lote 1 - "
     r"(?:(?:aquisi[çc][ãa]o|fornecimento|contrata[çc][ãa]o|compra)\s+"
     r"(?:parcelada\s+)?(?:de\s+)?)?"                                    # "aquisição de "
+    # achado 23/jul/26 (auditoria avançada, ângulo "sem âncora textual"): boilerplate
+    # de especificação técnica antes do nome real do produto — "Esp. Mínimas.\nVEÍCULO
+    # TIPO AMBULÂNCIA..." e "CONTENDO NO MÍNIMO AS SEGUINTES ESPECIFICAÇÕES TÉCNICAS
+    # MÍNIMAS E ITENS:• Veículo..." — quebrava a âncora de início de RE_VEICULO_INICIO,
+    # deixando 6 itens reais (ambulância R$127k-144k, hatch R$85k, minivan/micro-ônibus
+    # R$829k, ambulância R$427k, ônibus R$1,48M — todos citando medida de pneu de
+    # fábrica) virarem eh_pneu=True. Ignora esse cabeçalho também antes de checar produto.
+    r"(?:esp\.?\s*m[íi]nimas\.?\s*[\r\n]*\s*)?"
+    r"(?:contendo\s+no\s+m[íi]nimo\s+as\s+seguintes\s+"
+    r"(?:especifica[çc][õo]es\s+t[ée]cnicas\s+m[íi]nimas\s+e\s+itens|caracter[íi]sticas)"
+    r"[:•\s]*)?"
+    # achado 23/jul/26, 2ª rodada: mais 2 fraseologias de boilerplate encontradas —
+    # "DESCRIÇÃO COMPLETA SOMENTE NO EDITAL - AMBULÂNCIA..." (R$427,8k) e
+    # "Características Gerais do Veículo:Tipo: Ônibus..." (R$1,485 milhão), esta última
+    # com "veículo" no meio do próprio cabeçalho de bloco (não é o produto, é o rótulo).
+    r"(?:descri[çc][ãa]o\s+completa\s+somente\s+no\s+edital\s*[-–]\s*)?"
+    r"(?:caracter[íi]sticas\s+gerais\s+do\s+ve[íi]culo\s*:?\s*tipo\s*:?\s*)?"
 )
 # "pneumático(s)" é o nome formal/técnico do produto em bastante edital ("PNEUMÁTICO PARA
 # AUTOMÓVEL LEVE...", "PNEUMÁTICO NOVO DE 1ª LINHA..."), não só adjetivo (bug histórico
@@ -41,18 +58,28 @@ RE_PREFIXO_IGNORAR = (
 # ITEM (não do processo), "pneumático" no início de um item de catálogo é sempre o produto
 # em si, nunca "cadeira pneumática" (que começaria com "cadeira", não com "pneumático").
 RE_PNEU_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}(?:pneus?|pneum[áa]ticos?)\b", re.IGNORECASE)
-RE_CAMARA_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]mara\s+(de\s+)?ar\b", re.IGNORECASE)
+# achado 23/jul/26 (auditoria avançada, MAIOR achado de falso negativo desta rodada):
+# "câmara" nunca aceitava plural — "CÂMARAS DE AR..." (catálogo real de câmara de
+# caminhão/OTR, quase sempre plural) nunca batia produto_explicito, e a maioria não usa
+# medida em formato estrito .../..R.. (usa "aro 11.00 R22", "17,5x25", "900x20", etc, que
+# só batem RE_MEDIDA_AMPLA, não RE_MEDIDA_R) — 108 de 114 itens reais medidos contra a
+# base inteira ficavam eh_pneu=False só por essa lacuna. "s?" cobre singular e plural.
+RE_CAMARA_INICIO = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]maras?\s+(de\s+)?ar\b", re.IGNORECASE)
 # "CÂMARA DE FABRICAÇÃO NACIONAL... REFERÊNCIA AR 750/16" — câmara de pneu de verdade, mas
 # "de ar" não vem logo depois de "câmara" (RE_CAMARA_INICIO não bate). Fallback: aceita
 # "câmara" sozinho no início SE tiver medida ampla em algum lugar da descrição — protege
 # contra ruído tipo "Câmara Municipal"/bola esportiva "com câmara butil" (não tem medida de
 # pneu, isso nunca bate RE_MEDIDA_AMPLA).
-RE_CAMARA_GENERICA = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]mara\b", re.IGNORECASE)
+RE_CAMARA_GENERICA = re.compile(rf"^\s*{RE_PREFIXO_IGNORAR}c[âa]maras?\b", re.IGNORECASE)
 # achado 08/jul/26: "CÂMARA REFRIGERADA - Refrigerador modelo científico..." (freezer de
 # laboratório) bateu RE_CAMARA_GENERICA + alguma dimensão do equipamento bateu
 # RE_MEDIDA_AMPLA por coincidência — "câmara" tem outros sentidos fora de pneu (câmara
 # frigorífica, câmara municipal, câmara de vídeo). Exclui explicitamente antes de aceitar.
-RE_CAMARA_NAO_PNEU = re.compile(r"c[âa]mara\s+(refrigerad|fria\b|frigor[íi]fic|municipal|de\s+v[íi]deo|escura)", re.IGNORECASE)
+# achado 23/jul/26: "s?" adicionado — RE_CAMARA_GENERICA passou a aceitar plural
+# ("câmaras") na mesma rodada, então essa exclusão precisa cobrir o plural também
+# ("câmaras refrigeradas"/"câmaras municipais"), senão reabre o mesmo bug do
+# freezer de laboratório/câmara municipal só que na forma plural.
+RE_CAMARA_NAO_PNEU = re.compile(r"c[âa]maras?\s+(refrigerad|fria\b|frigor[íi]fic|municipal|de\s+v[íi]deo|escura)", re.IGNORECASE)
 RE_MEDIDA_AMPLA = re.compile(r"\d{2,5}[.,]?\d?\s*[-/xX]\s*\d{2,3}([.,]\d)?\b")
 # aceita barra opcional antes do R ("215/75/R17.5") e sufixo de letra colado no aro
 # ("R14C" — C de comercial/reforçado, sem espaço antes) — os 2 vistos em catálogo real.
@@ -69,10 +96,23 @@ RE_MEDIDA_R = re.compile(r"\d{3}\s*/\s*\d{2}\s*/?\s*[Rr]\s*\d{2}(?:[.,]\d)?[A-Za
 # (um/uma/uns/umas) entre "de" e o nome do veículo não era coberto pelo prefixo ignorável —
 # 4 itens reais achados (caminhão pipa R$630k, caminhão basculante R$589k x2, sedan
 # R$182k) classificados como pneu.
+# achado 23/jul/26: "automóvel"/"automotor" nunca estiveram na lista — "Aquisição de
+# Automóvel, tipo Hatch..." e "AUTOMÓVEL BÁSICO DE PASSEIO..." (ambos citando medida de
+# pneu de fábrica) escapavam por essa palavra faltar, mesmo com a âncora de início ok.
+# achado 23/jul/26, 2ª rodada (auditoria avançada): mais 4 lacunas na lista de veículo —
+# "MINIVAN" (uma palavra só, sem espaço — "van\b" não reconhece porque a âncora exige
+# bater exatamente na posição, não como substring no meio de outra palavra); "unidade
+# ODONTOLÓGICA móvel"/"unidade DE VACINAÇÃO móvel" (qualificador entre "unidade" e
+# "móvel" — "unidade\s+m[óo]vel" exigia as 2 palavras adjacentes); "triciclo" (elétrico/
+# de carga, R$86,3k); "reboque"/"carretinha" (trailer, R$8,98k-27,2k) — nenhum estava
+# na lista. R$260,7k (minivan) + R$749,6k (unidade odontológica móvel) + R$86,3k
+# (triciclo) + R$8,98k (carretinha) confirmados na medição contra a base real.
 RE_VEICULO_INICIO = re.compile(
-    rf"^\s*{RE_PREFIXO_IGNORAR}(?:um[as]?s?\s+)?(ve[íi]culo|caminh[ãa]o|ambul[âa]ncia|[ôo]nibus|micro[ -]?[ôo]nibus|van\b|"
-    r"furg[ãa]o|unidade\s+m[óo]vel|"
-    r"pick[ -]?up|caminhonete|trator\b|motocicleta|motoneta|"
+    rf"^\s*{RE_PREFIXO_IGNORAR}(?:um[as]?s?\s+)?(ve[íi]culo|caminh[ãa]o|ambul[âa]ncia|[ôo]nibus|micro[ -]?[ôo]nibus|"
+    r"mini[ -]?van\b|van\b|"
+    r"furg[ãa]o|unidade(?:\s+\w+){0,2}\s+m[óo]vel|autom[óo]vel|automotor\b|"
+    r"pick[ -]?up|caminhonete|trator\b|motocicleta|motoneta|tricicl[oa]|"
+    r"reboque|carretinha|"
     r"loca[çc][ãa]o\s+(di[áa]ria\s+)?de\s+ve[íi]culo)",
     re.IGNORECASE,
 )
@@ -90,8 +130,10 @@ RE_VEICULO_INICIO = re.compile(
 # achado 14/jul/26 (auditoria de falso positivo, cruzando com material_ou_servico do
 # PNCP): "REPARO DE PNEU ARO..." nunca desqualificava — "reparo" não estava em nenhuma
 # lista de exclusão, nem aqui nem em RE_EXCLUSAO_SERVICO.
+# achado 23/jul/26: "raparo" (erro ortográfico de "reparo", 2 itens reais achados na
+# auditoria avançada) não batia — grafia errada comum o bastante em edital pra valer o fix.
 RE_SERVICO_INICIO = re.compile(
-    rf"^\s*{RE_PREFIXO_IGNORAR}(montagem|desmontagem|servi[çc]o|execu[çc][ãa]o|reparo)\b",
+    rf"^\s*{RE_PREFIXO_IGNORAR}(montagem|desmontagem|servi[çc]o|execu[çc][ãa]o|reparo|raparo)\b",
     re.IGNORECASE,
 )
 # 2. Roda/aro de liga leve: "ARO 175/70 R13 FABRICADO EM LIGA LEVE", "RODA LIGA LEVE 205/60
@@ -131,19 +173,22 @@ RE_EXCLUSAO_MAQUINA = re.compile(
 #      pneu novo (casco reforçado aguenta recapagem futura), não descrição do item em si.
 RE_PROIBICAO_REFORMA = re.compile(
     r"n[ãa]o\s+(se\s+)?(ser[ãa]o?\s+)?aceit[ao]?s?[^.;]{0,120}?"
-    r"(recondicionad|reformad|recapad|recauchutad|remodelad)[^.;]{0,80}"
+    r"(recondicionad|reformad|recapad|recauchutad|remodelad|recape)[^.;]{0,80}"
     # achado 14/jul/26, 3ª rodada: gap coringa [^.;]{0,40}? entre "sem" e o termo (2ª
     # versão) é permissivo demais — bateu "sem DEFEITOS, a RECAPAGEM deverá ser..." (isso
     # é serviço de recapagem de verdade, "pneu usado" explícito no texto, não cláusula de
     # proibição). Ponte restrita só às palavras realmente vistas entre "sem" e o termo
     # ("uso [anterior/prévio]", "reforma", vírgula, "ou") — não wildcard genérico.
+    # achado 23/jul/26: "recape" adicionado ao grupo — "PNEU X, novo (sem recape ou
+    # remanufatura)..." (9 itens reais, R$0-1,3k) regrediu quando "recape" virou termo de
+    # exclusão solto (ver RE_EXCLUSAO_SERVICO) sem essa cláusula de negação ser reconhecida.
     r"|sem\s+(qualquer\s+)?(uso(\s+(anterior|pr[ée]vio))?|reforma)?[\s,]*(ou\s+)?"
-    r"(recondicionament|recauchutag|recapag|ressolag|remoldag|reform)\w*[^.;]{0,80}"
-    r"|suportar[^.;]{0,60}?(recauchutag|recapag|ressolag|remoldag|reform)\w*[^.;]{0,80}"
+    r"(recondicionament|recauchutag|recapag|ressolag|remoldag|reform|recape)\w*[^.;]{0,80}"
+    r"|suportar[^.;]{0,60}?(recauchutag|recapag|ressolag|remoldag|reform|recape)\w*[^.;]{0,80}"
     # achado 14/jul/26, 3ª rodada: "NÃO SENDO RESULTANTE DE [processo de] remoldagem e
     # recauchutagem" — 3ª fraseologia de exigência de pneu novo (nem "não aceita", nem "sem").
     r"|n[ãa]o\s+sendo\s+resultante\s+de[^.;]{0,60}?"
-    r"(recondicionament|recauchutag|recapag|ressolag|remoldag|reform)\w*[^.;]{0,80}",
+    r"(recondicionament|recauchutag|recapag|ressolag|remoldag|reform|recape)\w*[^.;]{0,80}",
     re.IGNORECASE,
 )
 RE_EXCLUSAO_SERVICO = re.compile(
@@ -154,10 +199,24 @@ RE_EXCLUSAO_SERVICO = re.compile(
     # "recapagens?" sozinho SÓ bate o plural, quebra o singular (bug na 1ª tentativa
     # desse fix, achado rodando a suíte de teste antes de confiar). "-age(m|ns)" cobre
     # os 2 corretamente.
-    r"recapage(m|ns)|recauchutage(m|ns)|ressolage(m|ns)|vulcaniza[çc][ãa]o|conserto|concerto\s+(de|em)|"  # "concerto" = erro ortográfico comum de "conserto" em edital
+    # achado 23/jul/26 (auditoria avançada): "concerto\s+(de|em)" exigia preposição
+    # depois — "CONCERTO PNEU..." (sem "de"/"em") escapava. A exclusão só roda depois
+    # que bate_produto já confirmou medida/âncora de pneu no texto (ver eh_pneu_de_verdade),
+    # então o risco de colidir com "concerto" no sentido musical é próximo de zero —
+    # seguro deixar solto, igual "conserto" (ortografia correta) já era.
+    r"recapage(m|ns)|recauchutage(m|ns)|ressolage(m|ns)|vulcaniza[çc][ãa]o|conserto|concerto|"
+    # achado 23/jul/26: "recape" é jargão coloquial de "recapagem" (mesmo serviço de
+    # reforma) usado em edital real (4 itens, R$253-893 cada) — lookahead evita colidir
+    # com "recapeamento" (obra de pavimentação de via, sem relação com pneu).
+    r"recape(?!amento)s?\b|"
+    # achado 23/jul/26: "reforma de pneu" nunca esteve em nenhuma lista de exclusão —
+    # 2 itens reais (R$40 e R$619) de serviço de reforma classificados como pneu novo.
+    r"reforma\s+de\s+pneus?|"
     r"presta[çc][aã]o\s+de\s+servi[çc]|servi[çc]os?\s+de\s+(borracharia|recauchutagem|vulcaniza|substitui|troca)|"
     r"loca[çc][aã]o\s+de\s+(trator|m[áa]quina|equipamento)|"
-    r"loca[çc][aã]o\s+(di[áa]ria\s+)?de.{0,40}(ve[íi]culo|van|minibus|micro[ -]?[ôo]nibus|[ôo]nibus|caminh[ãa]o|ambul[âa]ncia)|"
+    # achado 23/jul/26: só "diária" era coberta — "LOCAÇÃO MENSAL DE 2 VEÍCULOS TIPO
+    # SEDAN..." (aluguel de carro, R$17,1k/mês) escapava por a periodicidade ser outra.
+    r"loca[çc][aã]o\s+(di[áa]ria|mensal|semanal|anual)?\s*de.{0,40}(ve[íi]culo|van|minibus|micro[ -]?[ôo]nibus|[ôo]nibus|caminh[ãa]o|ambul[âa]ncia)|"
     r"manuten[çc][ãa]o\s+(preventiva|corretiva)?\s*(do|de)\s+ve[íi]culo|"
     # achado 08/jul/26: "servi[çc]o de montagem/desmontagem" e "montagem e desmontagem"
     # soltos (qualquer lugar do texto) excluíam venda genuína de pneu com serviço agregado

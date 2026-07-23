@@ -10,7 +10,7 @@ bugs pode voltar em silêncio.
 
 import pytest
 
-from filtro_onco import eh_medicamento_onco_de_verdade, principio_ativo_provavel
+from filtro_onco import classificar_classe_farmaco, eh_medicamento_onco_de_verdade, principio_ativo_provavel
 
 
 class TestTalidomidaFormularioNaoEhMedicamento:
@@ -46,6 +46,41 @@ class TestAcidoZoledronicoOsteoporoseVsOncologico:
         assert eh_medicamento_onco_de_verdade("Ácido Zoledrônico 4mg solução injetável") is True
 
 
+class TestOrdemInvertidaDeCatalogo:
+    """Bug MAIOR achado na auditoria avançada de 23/jul/26: catálogo do PNCP às vezes
+    escreve o nome do princípio ativo composto em ordem invertida, estilo dicionário/
+    catálogo farmacêutico ("ZOLEDRONICO, ACIDO" em vez de "ACIDO ZOLEDRONICO") — a
+    checagem por substring exato nunca batia esses casos. 17 itens reais medidos contra
+    a base inteira (15 zoledrônico + 2 trióxido de arsênio) — os únicos 2 termos
+    multi-palavra do vocabulário, escopo então totalmente delimitado."""
+
+    def test_zoledronico_acido_ordem_invertida_e_true(self):
+        assert eh_medicamento_onco_de_verdade(
+            "ZOLEDRONICO, acido 4mg injetavel, frasco-ampola."
+        ) is True
+        assert principio_ativo_provavel(
+            "ZOLEDRONICO, acido 4mg injetavel, frasco-ampola."
+        ) == "Acido zoledronico"
+
+    def test_zoledronico_acido_ordem_invertida_ainda_respeita_uso_duplo(self):
+        """Regressão: ordem invertida não pode furar a exclusão de uso duplo (5mg/
+        Aclasta = osteoporose) — só resolve o problema de ORDEM, não desliga a
+        checagem de dose/marca já existente."""
+        assert eh_medicamento_onco_de_verdade(
+            "ZOLEDRONICO, acido 5mg injetavel, frasco-ampola."
+        ) is False
+
+    def test_arsenio_trioxido_ordem_invertida_e_true(self):
+        assert eh_medicamento_onco_de_verdade(
+            "ARSENIO TRIOXIDO, 2MG/ML, SOLUCAO INJETAVEL, AMPOLA 6ML"
+        ) is True
+
+    def test_ordem_normal_continua_true(self):
+        """Regressão: não pode quebrar a ordem normal (não invertida) já coberta."""
+        assert eh_medicamento_onco_de_verdade("Ácido Zoledrônico 4mg solução injetável") is True
+        assert eh_medicamento_onco_de_verdade("Trioxido de arsenio 1mg/ml solução") is True
+
+
 class TestDenosumabeDoseSeparaIndicacao:
     def test_60mg_e_prolia_osteoporose_falso_positivo(self):
         assert eh_medicamento_onco_de_verdade("DENOSUMABE 60mg/ml solução injetável seringa") is False
@@ -78,6 +113,47 @@ class TestPrincipioAtivoRespeitaExclusao:
         assert principio_ativo_provavel("DENOSUMABE, 120mg, solucao injetavel") == "Denosumabe"
 
 
+class TestServicoNaoEhCompraDeMedicamento:
+    def test_infusao_intravenosa_e_servico_falso_positivo(self):
+        assert eh_medicamento_onco_de_verdade("INFUSAO INTRAVENOSA DE MEDICAMENTO ACIDO ZOLEDRONICO", "S") is False
+
+    def test_manipulacao_e_servico_falso_positivo(self):
+        assert eh_medicamento_onco_de_verdade("Serviço de Manipulação de Ciclofosfamida", "S") is False
+
+    def test_material_normal_continua_true(self):
+        assert eh_medicamento_onco_de_verdade("Ácido Zoledrônico 4mg solução injetável", "M") is True
+
+    def test_sem_material_ou_servico_informado_nao_quebra(self):
+        assert eh_medicamento_onco_de_verdade("Ácido Zoledrônico 4mg solução injetável") is True
+
+
+class TestBevacizumabeMitomicinaOftalmoVsOncologico:
+    def test_avastin_intravitrea_e_oftalmo_falso_positivo(self):
+        assert eh_medicamento_onco_de_verdade("APLICAÇÃO DE INJEÇÃO INTRAVÍTREA DE AVASTIN NO OLHO DIREITO", "M") is False
+
+    def test_avastin_monocular_e_oftalmo_falso_positivo(self):
+        assert eh_medicamento_onco_de_verdade("APLICAÇÃO DE MEDICAMENTO QUIMIOTERÁPICO AVASTIN - 1ª SESSÃO - MONOCULAR", "M") is False
+
+    def test_mitomicina_pterigio_e_oftalmo_falso_positivo(self):
+        assert eh_medicamento_onco_de_verdade("CIRURGIA DE PTERÍGIO COM RECOBRIMENTO CONJUNTIVAL + MITOMICINA", "M") is False
+
+    def test_bevacizumabe_sem_contexto_continua_ambiguo_true(self):
+        # sem sinal nenhum de oftalmo -- mantém True (risco de jogar fora compra
+        # oncológica real > risco de manter ambígua), ver comentário em filtro_onco.py
+        assert eh_medicamento_onco_de_verdade("BEVACIZUMABE 25 MG/ML/FRASCO", "M") is True
+
+    def test_mitomicina_oncologica_sem_contexto_continua_true(self):
+        assert eh_medicamento_onco_de_verdade("Mitomicina 40mg pó liofilizado para solução injetável", "M") is True
+
+
+class TestSutentRemovidoDoVocabulario:
+    def test_sutentacao_nao_e_mais_falso_positivo(self):
+        assert eh_medicamento_onco_de_verdade("ESTRUTURA DE SUTENTACAO EM TUBULAR") is False
+
+    def test_sunitinibe_generico_continua_cobrindo_a_droga(self):
+        assert eh_medicamento_onco_de_verdade("Sunitinibe 50mg cápsula") is True
+
+
 class TestNovosFarmacosAdicionados23Jul:
     @pytest.mark.parametrize("termo,esperado", [
         ("Aquisição de BICALUTAMIDA 50MG.", "Bicalutamida"),
@@ -93,3 +169,28 @@ class TestNovosFarmacosAdicionados23Jul:
     def test_termo_reconhecido(self, termo, esperado):
         assert eh_medicamento_onco_de_verdade(termo) is True
         assert principio_ativo_provavel(termo) == esperado
+
+
+class TestClasseFarmacoCoberturaCompleta:
+    """Achado 23/jul/26 (auditoria avançada): 19 de 92 genéricos não tinham entrada em
+    CLASSE_FARMACO (caíam em 'Outro' silenciosamente), incluindo vários termos
+    adicionados nesta mesma sessão (Everolimo/Trametinibe/Lapatinibe/Avelumabe/
+    Bicalutamida/Apalutamida/Fulvestranto) — encaixe claro numa das 6 categorias já
+    existentes. Os outros 12 (Trioxido de arsenio, Acido zoledronico, Hidroxiureia,
+    Asparaginase, Lenalidomida, Carfilzomibe, Bortezomibe, Venetoclaxe, Talidomida,
+    Tretinoina, Eribulina, Ixazomibe) NÃO têm encaixe limpo em nenhuma das 6 categorias
+    fixas (são IMiD/inibidor de proteassoma/bisfosfonato/enzima/diferenciador — cada um
+    mereceria categoria própria) — não forçados aqui, ficam 'Outro' até decisão do
+    usuário sobre expandir a taxonomia (ver relatório da auditoria)."""
+
+    @pytest.mark.parametrize("termo,classe_esperada", [
+        ("Everolimo", "Inibidor de quinase/alvo molecular"),
+        ("Trametinibe", "Inibidor de quinase/alvo molecular"),
+        ("Lapatinibe", "Inibidor de quinase/alvo molecular"),
+        ("Avelumabe", "Anticorpo monoclonal"),
+        ("Bicalutamida", "Hormonal/endocrino"),
+        ("Apalutamida", "Hormonal/endocrino"),
+        ("Fulvestranto", "Hormonal/endocrino"),
+    ])
+    def test_classe_farmaco_dos_termos_novos(self, termo, classe_esperada):
+        assert classificar_classe_farmaco(termo) == classe_esperada

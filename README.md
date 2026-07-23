@@ -45,6 +45,9 @@ licit/
 ├── cantu_upload.py          Upload resultado Cantu → Notion (REST API)
 ├── preencher_planilha_precificacao.py  Preenche cópia da planilha modelo (Sheets) com resultado dos
 │                            4 scrapers + referência do edital — ver seção "Precificação" abaixo
+├── inmetro_lookup.py        Busca certificado INMETRO no ProdCert oficial (Portaria 379/2021,
+│                            pneus). Rodar só pros itens marcados "x" na coluna AA da planilha
+│                            (Produto Escolhido) — nunca pra todos os candidatos, ver CLAUDE.md §15.5
 ├── precificacao_gsheets.py  ⚠️ DEPRECADO — hardcoded pro Cantagalo (jun/2026), não usar em edital novo
 ├── sample_objeto.py         Script de exploração pontual da API PNCP (objetoCompra)
 ├── items_X.json / results_X_*.json / analise_X.json   Input/output de cotação por edital
@@ -73,6 +76,26 @@ licit/
 │   ├── schema_supabase.sql     Schema das 6 tabelas (schema `public`, mercado PNCP)
 │   └── requirements.txt        Deps desse pipeline (psycopg2, streamlit, plotly, curl_cffi...)
 │
+├── analise_onco/            Pipeline de mercado para medicamentos oncológicos (espelha analise/,
+│   │                        iniciado 23/jul/2026 — vitrine de capacidade, não vende oncológico
+│   │                        ainda: ver `views/mais_no_licit.py`)
+│   ├── coletor_onco.py         Fase 1 — busca por LISTA de termos (genérico+marca, ~86 termos),
+│   │                           não 1 termo fixo como o de pneu — grava em schema `oncologia`
+│   ├── coletor_onco_detalhe.py Fase 2 — detalhe+itens+resultado por edital (mesmo padrão do de pneu)
+│   ├── filtro_onco.py          Filtro "é medicamento oncológico de verdade?" — match por substring
+│   │                           normalizado (case/acento-insensível) contra genéricos+marcas, com
+│   │                           exclusão de uso duplo (mesma substância tem indicação não-oncológica:
+│   │                           osteoporose/reumatologia/dermatologia/oftalmologia) — ver "Auto-
+│   │                           aperfeiçoamento do filtro oncológico" abaixo
+│   ├── test_filtro_onco.py     Regressão do filtro (39 casos — 5 de uso duplo, exclusão serviço/
+│   │                           oftalmo, ordem invertida de princípio ativo, 9 fármacos novos)
+│   ├── recomputar_filtro_onco.py  Reaplica filtro_onco.py sem rebuscar API (espelha recomputar_filtro.py)
+│   ├── conectar_onco.py        Queries do schema `oncologia` usadas pelo dashboard
+│   ├── dashboard_onco.py + dashboard_common_onco.py  Dashboard Streamlit (multi-página, espelha dashboard_pncp.py)
+│   ├── views/                  Conteúdo de cada página — inclui `mais_no_licit.py` (vitrine do que
+│   │                           já roda na vertical de pneus e ainda não foi trazido pro oncológico)
+│   └── requirements.txt
+│
 ├── cotacao_master/           Coleta diária de preço direto nos 4 distribuidor (ver seção própria abaixo)
 │   ├── *_scraper_master.py     Cópia dos 4 scrapers de edital, adaptada (sem limite de candidato,
 │   │                           ficha técnica sempre) — originais na raiz NUNCA são alterados
@@ -94,6 +117,8 @@ licit/
 | `pncp_radar.yml` | dias úteis, 5h BRT | Radar diário → email |
 | `pncp_coletor_editais.yml` | diário, ~meia-noite BRT (+ manual) | Fase 1 — reescaneia as 27 UFs pra achar edital novo (`--reset`, ver docstring de `coletor_pncp.py`) |
 | `pncp_coletor_detalhe.yml` | a cada ~5h30 | Fase 2 — processa fila pendente (editais novos entram sozinhos) |
+| `onco_coletor_editais.yml` | diário | Fase 1 onco — busca todos os termos do vocabulário (`analise_onco/coletor_onco.py`) |
+| `onco_coletor_detalhe.yml` | periódico | Fase 2 onco — processa fila pendente (`coletor_onco_detalhe.py`) |
 
 Fase 2 não descobre edital novo sozinha — só fase 1 faz isso (API não permite paginar por data). Rodar `coletor_pncp.py --reset` é a única forma de achar processo novo.
 
@@ -134,6 +159,84 @@ na memória). 2 investigações separadas, cada rodada:
   distribuição final: Passeio 24.958, Caminhão 11.417, Câmara de ar 6.934, Agrícola 1.101,
   Moto 855 (161.491 itens reprocessados, `eh_pneu=TRUE` inalterado em 46.654 — só `categoria`
   mudou, nenhum item entrou/saiu do filtro).
+
+**Rodada 23/jul/2026 (auditoria avançada, 3ª rodada) — 12 bugs corrigidos, 147/163.876
+itens mudariam (0,09% da base), `recomputar_filtro.py` rodado — `eh_pneu=TRUE` foi de
+47.258 → 47.313 (+55):**
+
+Falso positivo (46 itens, ~R$4,82 milhões tirados da métrica — todos veículo/serviço
+classificado como pneu):
+- Boilerplate de especificação técnica antes do nome do veículo ("Esp. Mínimas.",
+  "CONTENDO NO MÍNIMO AS SEGUINTES ESPECIFICAÇÕES...", "DESCRIÇÃO COMPLETA SOMENTE NO
+  EDITAL -", "Características Gerais do Veículo:Tipo:") quebrava a âncora de início —
+  6 veículos inteiros (ambulâncias R$127-427k, hatch R$85,8k, micro-ônibus R$829,9k,
+  ônibus R$1,485 milhão) escapavam.
+- "Automóvel"/"automotor", "minivan" grudado (sem espaço), "unidade ODONTOLÓGICA/DE
+  VACINAÇÃO móvel" (qualificador entre "unidade" e "móvel"), "triciclo", "reboque"/
+  "carretinha" nunca estiveram na lista de veículo (`RE_VEICULO_INICIO`).
+- Typos não reconhecidos: "concerto" sem preposição, "raparo" (erro de "reparo").
+- "Recape" (jargão de recapagem) e "reforma de pneu" nunca excluíam.
+- Locação MENSAL de veículo (só "diária" era coberta).
+
+Falso negativo (101 itens — maior achado da rodada):
+- **"Câmaras" no plural nunca era reconhecido** (`RE_CAMARA_INICIO`/`RE_CAMARA_GENERICA`
+  só aceitavam singular) — catálogo real de câmara de caminhão/OTR/moto é quase sempre
+  plural e usa medida fora do formato estrito `.../..R..`. Sozinho responde por 101 dos
+  147 itens (R$22,9 mil recuperados).
+
+Ângulos que não acharam nada (robustez confirmada): NCM (campo nunca populado nesta
+base), `criterio_julgamento_nome`.
+
+## Auto-aperfeiçoamento do filtro oncológico (`filtro_onco.py`)
+
+Pipeline iniciado 23/jul/2026 (espelha `filtro_pneu.py`) — mesma regra fixada em
+`CLAUDE.md` §17.15, mesma cadência (mensal, último dia útil).
+
+**Double-check inicial (23/jul/2026, mesmo dia da criação — 2 rodadas antes de
+qualquer dado ir pro dashboard):**
+- 5 termos de uso duplo (mesma substância, indicação NÃO-oncológica é a fatia real
+  maior): Talidomida (bloco de receituário/telemedicina ≠ comprimido oncológico),
+  Ácido zoledrônico 5mg/Aclasta (osteoporose) vs 4mg/Zometa (oncológico), Denosumabe
+  60mg/Prolia (osteoporose) vs 120mg/Xgeva (oncológico), Metotrexato 2,5mg comprimido
+  (reumatologia) vs injetável alta dose (oncológico), Tretinoína tópico/Vitacid
+  (dermatologia) vs cápsula oral (oncológico).
+- `material_ou_servico="S"` exclui direto — amostra de 57 itens "S" marcados onco eram
+  quase todos infusão/aplicação/manipulação/importação (serviço em torno do fármaco,
+  não compra do fármaco).
+- Contexto oftalmológico exclui Bevacizumabe/Avastin e Mitomicina (uso ocular real e
+  comum — anti-VEGF intravítreo, cirurgia de pterígio) — sem contexto ocular explícito,
+  mantido `True` (risco de descartar compra oncológica real > risco de manter ambíguo).
+- "Sutent" removido da lista de marcas — 100% colisão com "sustentação"/"sustentável",
+  zero compra real do fármaco na amostra (genérico "Sunitinibe" já cobre a droga).
+- 9 fármacos novos adicionados ao vocabulário (Bicalutamida, Fulvestranto, Everolimo,
+  Avelumabe, Carfilzomibe, Trametinibe, Lapatinibe, Apalutamida, Ixazomibe).
+
+**Auditoria avançada (23/jul/2026, mesmo dia, rodada seguinte) — 1 bug de
+classificação + achado de cobertura, `recomputar_filtro_onco.py` rodado —
+`eh_medicamento_onco=TRUE` foi de 13.355 → 14.038 (+683):**
+- **Bug (17 itens):** catálogo do PNCP às vezes escreve princípio ativo composto em
+  ordem invertida ("ZOLEDRONICO, ACIDO" em vez de "ACIDO ZOLEDRONICO", "ARSENIO
+  TRIOXIDO" em vez de "TRIOXIDO DE ARSENIO") — substring exato nunca batia. Fix
+  (`_bate_termo()`) restrito aos 2 únicos termos multi-palavra do vocabulário atual
+  (escopo explícito, não regex genérico de permutação — evita abrir risco se o
+  vocabulário crescer com termo multi-palavra novo sem entrada deliberada).
+- 7 termos sem `CLASSE_FARMACO` (caíam em "Outro" silenciosamente) mapeados pra classe
+  correta — não afeta `True`/`False`, só a quebra por classe farmacológica.
+- **Achado de cobertura (não virou código — vocabulário vive em `coletor_onco.py`,
+  decisão do usuário se/quando expandir):** ~35 fármacos oncológicos de peso comercial
+  testados contra a base já coletada, **todos apareceram por coocorrência** mesmo nunca
+  tendo sido termo de busca (Octreotida 153x, Ruxolitinibe 117x, Alectinibe 96x,
+  Brentuximabe vedotina 93x, Interferona 83x, Megestrol 83x, Lanreotida 89x, Ponatinibe
+  51x, Triptorrelina 65x, entre outros) — sinal de que o volume real de mercado onco é
+  maior do que o coletado hoje, já que esses termos nunca foram buscados na API.
+  **Risco de uso duplo a avaliar antes de adicionar** (mesmo padrão do double-check
+  inicial): Interferona (hepatite, risco alto), BCG (vacina infantil universal — só
+  "Onco BCG"/"BCG intravesical" seguro), Pamidronato (osteoporose, mesmo padrão do
+  zoledrônico), Megestrol/Octreotida/Lanreotida (acromegalia).
+- Ângulos que não acharam nada (robustez confirmada): ordenação termo-curto-contido-
+  em-termo-maior (0 colisões nos 115 termos), variantes em inglês sem sufixo "-e",
+  sinais estruturais (`criterio_julgamento_nome`, `tipo_beneficio_nome`, `unidade_medida`,
+  extremos de valor).
 
 ## Tema e paleta (skill dataviz)
 
@@ -265,8 +368,7 @@ pré-sinaliza suspeita de produto reforçado/comercial antes da revisão (zero c
 
 ## Precificação (planilha)
 
-- **Modelo mestre:** [pasta no Drive](https://drive.google.com/drive/folders/1Nf10IsY2Gzpf_1WXWuKBC0B58vAbnuXX) — nunca editar direto, sempre duplicar (`copy_file`) antes de preencher
-- 4 blocos empilhados (Bransales/Cantu/GP/Green), colunas de entrada A-L (Item/Produto/Modelo/Especificação Técnica/Critérios/Distribuidor/Marca/Link/Observação/Preço UN/Ref. Edital/Qtde) + coluna Vencedor (fórmula, compara os 4 blocos). Colunas de cálculo (Investimento/Frete/Imposto/Preço de venda/Margem) são fórmula — nunca escrever nelas.
+- **Modelo mestre:** [pasta no Drive](https://drive.google.com/drive/folders/1Nf10IsY2Gzpf_1WXWuKBC0B58vAbnuXX) — nunca editar direto, sempre duplicar (`copy_file`) antes de preencher. Só tem o banner (linhas 1-2) — os 4 blocos (Bransales/Cantu/GP/Green) e as fórmulas são construídos do zero pelo script a cada rodada, altura dinâmica (não mais 12 linhas fixas por bloco). Colunas de entrada A-L (Item/Produto/Modelo/Especificação Técnica/Critérios/Distribuidor/Marca/Link/Observação/Preço UN/Ref. Edital/Qtde) + coluna Vencedor (fórmula, compara os 4 blocos).
 - `python preencher_planilha_precificacao.py <spreadsheet_id> <analise.json> --bransales X --cantu X --gp X --green X`
 - Detalhe completo: `CLAUDE.md` §15.5
 

@@ -7,6 +7,8 @@ Cobre os 8 bugs históricos documentados em filtro_pneu.py (achado 07-08/jul/202
 16/jul/2026 (Caminhão/Moto). Objetivo: nenhum bug documentado pode voltar em silêncio.
 """
 
+import re
+
 import pytest
 
 from filtro_pneu import classificar_categoria, eh_pneu_de_verdade
@@ -60,6 +62,53 @@ class TestVeiculoInteiro:
     def test_aquisicao_de_uma_ambulancia_e_false(self):
         assert eh_pneu_de_verdade(
             "Aquisição de uma ambulância tipo A, zero quilômetro, pneus 185/65 R15 de fábrica"
+        ) is False
+
+    def test_preambulo_esp_minimas_antes_de_ambulancia_e_false(self):
+        """Achado 23/jul/26 (auditoria avançada): boilerplate 'Esp. Mínimas.' antes do
+        nome do veículo quebrava a âncora de início — R$127k-144k (ambulância real,
+        3 itens) classificados como pneu."""
+        assert eh_pneu_de_verdade(
+            "Esp. Mínimas.\nVEÍCULO TIPO AMBULÂNCIA PARA SIMPLES REMOÇÃO, FURGÃO TODO EM "
+            "CHAPA DE AÇO ORIGINAL DE FÁBRICA, 0 (ZERO) KM; PNEUS 175/70 R14; AR CONDICIONADO"
+        ) is False
+
+    def test_preambulo_contendo_no_minimo_antes_de_veiculo_e_false(self):
+        """Achado 23/jul/26: mesmo bug, outra fraseologia de boilerplate —
+        R$85k (hatch) e R$829k (micro-ônibus) classificados como pneu."""
+        assert eh_pneu_de_verdade(
+            "CONTENDO NO MÍNIMO AS SEGUINTES ESPECIFICAÇÕES TÉCNICAS MÍNIMAS E ITENS:"
+            "• Veículo Automotor Utilitário, Tipo Passeio, hatch - versão completa; "
+            "Combustível: Bicombustível; Pneus: 175/65 R14 novos, com selo do INMETRO"
+        ) is False
+
+    def test_automovel_nao_estava_na_lista_de_veiculo(self):
+        """Achado 23/jul/26: 'automóvel'/'automotor' nunca estiveram na lista de
+        palavras de veículo — 'Aquisição de Automóvel, tipo Hatch...' com medida de
+        pneu de fábrica citada escapava e virava eh_pneu=True."""
+        assert eh_pneu_de_verdade(
+            "Aquisição de Automóvel, tipo Hatch, vendido por uma Concessionária "
+            "autorizada pelo Fabricante; Rodas de aço 5.5 x 14; Pneus 175/65 R 14"
+        ) is False
+        assert eh_pneu_de_verdade(
+            "AUTOMÓVEL BÁSICO DE PASSEIO, NOVO, ZERO QUILÔMETRO, PNEUS 175/70 R14"
+        ) is False
+
+    def test_preambulo_descricao_completa_somente_no_edital_e_false(self):
+        """Achado 23/jul/26: boilerplate 'DESCRIÇÃO COMPLETA SOMENTE NO EDITAL -' antes
+        do nome do veículo — R$427,8k (ambulância) classificado como pneu."""
+        assert eh_pneu_de_verdade(
+            "DESCRIÇÃO COMPLETA SOMENTE NO EDITAL  -  AMBULÂNCIA DE SUPORTE BÁSICO TIPO B "
+            "ADESIVADO CONFORME EDITAL Veículo novo, zero km, com pneus 225/75 R 16C"
+        ) is False
+
+    def test_preambulo_caracteristicas_gerais_do_veiculo_tipo_e_false(self):
+        """Achado 23/jul/26: 'Características Gerais do Veículo:Tipo:' é um cabeçalho
+        de bloco, não o produto — o tipo real vem depois ('Ônibus rodoviário...') —
+        R$1,485 milhão (ônibus) classificado como pneu."""
+        assert eh_pneu_de_verdade(
+            "Características Gerais do Veículo:Tipo: Ônibus rodoviário, tipo toco, motor "
+            "traseiro, zero km; rodas e pneus: roda em aço 8.25 x 22,5 e pneus 295/80 R 22,5"
         ) is False
 
 
@@ -239,4 +288,183 @@ class TestCategoriaMotoNotacao:
         """Regressão: '175/70/13' (passeio escrito sem R) não pode virar Moto
         via substring '70/13' — lookbehind bloqueia trecho no meio do 3º número."""
         assert classificar_categoria("PNEU 175/70/13") != "Moto"
+
+
+# ── Achados 23/jul/2026 (auditoria avançada, ~1h, base inteira 163.876 itens) ──
+# Ângulo "eh_pneu=True sem âncora textual" (só medida solta) revelou 9 itens reais
+# (ambulância/hatch/automóvel/ônibus, R$85k-1,485 milhão) — ver bugs de boilerplate
+# de veículo acima. Ângulo "contém 'pneu' mas eh_pneu=False" (breakdown de motivo de
+# exclusão contra os 29.648 itens) revelou os 4 bugs abaixo — nenhum item caiu em
+# "bate produto mas não deveria ser excluído" (0 bugs de lógica solta), mas a lista
+# de termos de serviço/reforma tinha lacunas reais.
+
+class TestConcertoTypoSemDeOuEm:
+    """Bug: 'conserto' (ortografia correta) já excluía sozinho, mas 'concerto' (erro
+    ortográfico comum, mesmo comentário já existente no código) só excluía com 'de'/'em'
+    depois — 'CONCERTO PNEU...' (sem preposição) escapava e virava eh_pneu=True."""
+
+    def test_concerto_sem_preposicao_e_false(self):
+        assert eh_pneu_de_verdade("CONCERTO PNEU VEICULO MÉDIO SEM CÂMARA 215/75R 17.5") is False
+
+    def test_concerto_com_de_continua_false(self):
+        assert eh_pneu_de_verdade("CONCERTO DE PNEU 215/75R 17.5") is False
+
+
+class TestRecapeJargaoDeRecapagem:
+    """Bug: 'recape' é jargão coloquial de 'recapagem' (mesmo serviço de reforma),
+    usado em pelo menos 1 edital real com 4 itens (R$253-893 cada) — não estava na
+    lista de exclusão, só a forma completa 'recapagem'. Lookahead evita colidir com
+    'recapeamento' (obra de pavimentação/asfalto, sem relação com pneu)."""
+
+    def test_recape_de_pneu_e_false(self):
+        assert eh_pneu_de_verdade("Recape - Pneu 175/70/R13 Uno Way") is False
+
+    def test_recapeamento_de_via_nao_e_afetado(self):
+        """Regressão: 'recapeamento' (obra de via pública) não pode ser confundido
+        com 'recape' de pneu — ainda que seja um cenário artificial (não teria medida
+        de pneu de verdade), a exclusão não deve reagir à palavra errada."""
+        assert not re.search(r"\brecape(?!amento)s?\b", "RECAPEAMENTO ASFÁLTICO DA VIA", re.IGNORECASE)
+
+    def test_sem_recape_ou_remanufatura_e_pneu_novo(self):
+        """Achado 23/jul/26 (regressão do próprio fix acima, achada na medição de
+        impacto contra a base real): 'PNEU X, novo (sem recape ou remanufatura)' é
+        cláusula de proibição exigindo pneu NOVO (mesmo padrão de 'sem reforma ou
+        recauchutagem', já tratado) — 9 itens reais (R$0-1,3k cada) regrediram de
+        True pra False quando 'recape' virou termo de exclusão solto, porque a
+        negação com 'recape' ainda não era reconhecida por RE_PROIBICAO_REFORMA."""
+        assert eh_pneu_de_verdade(
+            "PNEU 175/65 R14, tipo radial, novo (sem recape ou remanufatura), com as "
+            "seguintes especificações mínimas: índice de carga 82"
+        ) is True
+
+
+class TestReformaDePneuNaoReconhecida:
+    """Bug: 'reforma de pneu' (sinônimo de recapagem/recauchutagem) nunca esteve em
+    nenhuma lista de exclusão — 2 itens reais (R$40 e R$619, serviço de reforma de
+    pneu de carga) classificados como venda de pneu novo."""
+
+    def test_reforma_de_pneu_e_false(self):
+        assert eh_pneu_de_verdade("REFORMA DE PNEU CARGA 295/80R22,5") is False
+
+    def test_reforma_de_pneu_2_e_false(self):
+        assert eh_pneu_de_verdade("REFORMA DE PNEU 275/80 R22.5") is False
+
+    def test_pneu_novo_nao_e_afetado_por_reforma_solta(self):
+        """Regressão: 'reforma' bare não pode contaminar item de pneu novo genuíno
+        que só cita a palavra dentro de uma cláusula de proibição já tratada por
+        RE_PROIBICAO_REFORMA (sem reforma ou recauchutagem, etc. — cobertura antiga)."""
+        assert eh_pneu_de_verdade(
+            "PNEUS - Pneu 225 - 65 R16 - novo de fabrica, de primeiro uso, "
+            "sem reforma ou recauchutagem, com garantia minima de 12 meses"
+        ) is True
+
+
+class TestLocacaoMensalDeVeiculo:
+    """Bug: exclusão de locação de veículo só cobria 'diária' — 'LOCAÇÃO MENSAL DE
+    2 VEÍCULOS TIPO SEDAN...' (aluguel de carro, não venda de pneu, R$17,1k e
+    R$639,60/mês) escapava por a palavra ser 'mensal', não 'diária'."""
+
+    def test_locacao_mensal_de_veiculo_sedan_e_false(self):
+        assert eh_pneu_de_verdade(
+            "LOCAÇÃO MENSAL DE 2 (DOIS) VEÍCULOS TIPO SEDAN, SEM FORNECIMENTO DE "
+            "MOTORISTA, PNEUS 185/65 R15 INCLUSOS NA MANUTENÇÃO"
+        ) is False
+
+    def test_locacao_diaria_continua_false(self):
+        assert eh_pneu_de_verdade(
+            "Locação diária de veículo tipo van, pneus 185/65 R15 inclusos"
+        ) is False
+
+
+class TestCamaraPlural:
+    """Bug MAIOR achado nesta rodada: RE_CAMARA_INICIO/RE_CAMARA_GENERICA só
+    reconheciam 'câmara' singular — 'câmaras de ar' (plural, extremamente comum em
+    catálogo real de câmara de pneu de caminhão/OTR) nunca batia produto_explicito
+    e a maioria não tem medida em formato estrito .../..R.. (usa 'aro 11.00 R22',
+    '17,5x25', '900x20', 'CAMARAS>1000/20' etc.) — 108 de 114 itens reais (medido
+    contra a base inteira) ficavam eh_pneu=False por esse motivo sozinho."""
+
+    def test_camaras_de_ar_plural_e_true(self):
+        assert eh_pneu_de_verdade("Câmaras de Ar aro 11.00 R22 Válvula TC 131") is True
+
+    def test_camaras_de_ar_plural_com_x_e_true(self):
+        assert eh_pneu_de_verdade("Câmaras de Ar aro 17,5x25 Câmara FE 2725") is True
+
+    def test_camaras_generica_plural_sem_de_ar_mas_com_medida_ampla_e_true(self):
+        assert eh_pneu_de_verdade("CAMARAS>900/20") is True
+
+    def test_camara_singular_continua_true(self):
+        """Regressão: não pode quebrar o caso singular já coberto."""
+        assert eh_pneu_de_verdade("CÂMARA DE FABRICAÇÃO NACIONAL REFERÊNCIA AR 750/16") is True
+
+    def test_camaras_refrigeradas_plural_nao_e_pneu(self):
+        """Achado defensivo 23/jul/26: RE_CAMARA_NAO_PNEU também só cobria singular —
+        ao aceitar plural em RE_CAMARA_GENERICA, precisa excluir 'câmaras refrigeradas'/
+        'câmaras municipais' no plural também, senão reabre o bug de 08/jul/26 (freezer/
+        câmara municipal) na forma plural."""
+        assert eh_pneu_de_verdade(
+            "CÂMARAS REFRIGERADAS MODELO 750/16 CIENTÍFICO LABORATÓRIO"
+        ) is False
+
+
+class TestMinivanGludaSemEspaco:
+    """Bug: 'van\\b' não reconhece 'MINIVAN' (uma palavra só, sem espaço) porque a
+    âncora exige o match começar exatamente na posição — R$260,7k (minivan/furgão
+    de passageiros) classificado como pneu."""
+
+    def test_minivan_glued_no_inicio_e_false(self):
+        assert eh_pneu_de_verdade(
+            "MINIVAN - Aquisição de veículo tipo furgão para transporte de passageiros, "
+            "pneus 195/65 R15 de fábrica"
+        ) is False
+
+
+class TestUnidadeMovelComQualificador:
+    """Bug: 'unidade\\s+m[óo]vel' exigia as 2 palavras adjacentes — 'UNIDADE
+    ODONTOLÓGICA MÓVEL' (qualificador no meio) escapava — R$749,6k classificado
+    como pneu."""
+
+    def test_unidade_odontologica_movel_e_false(self):
+        assert eh_pneu_de_verdade(
+            "UNIDADE ODONTOLÓGICA MÓVEL: VEÍCULO AUTOMOTOR, NOVO, 0 KM, TIPO FURGÃO, "
+            "PNEUS 195/65 R15 DE FÁBRICA"
+        ) is False
+
+    def test_unidade_movel_sem_qualificador_continua_false(self):
+        assert eh_pneu_de_verdade(
+            "UNIDADE MOVEL DE BANCO DE LEITE - VEÍCULO AUTOMOTOR, PNEUS 195/65 R15"
+        ) is False
+
+
+class TestTricicloEhVeiculo:
+    """Bug: 'triciclo' (elétrico, de carga) nunca esteve na lista de veículo —
+    R$86,3k (triciclo elétrico com caçamba basculante) classificado como pneu."""
+
+    def test_triciclo_eletrico_e_false(self):
+        assert eh_pneu_de_verdade(
+            "TRICICLO ELÉTRICO COM CAÇAMBA BASCULANTE, PNEUS 225/75 R16 DE FÁBRICA"
+        ) is False
+
+
+class TestReboqueCarretinhaEhVeiculo:
+    """Bug: 'reboque'/'carretinha' (trailer/carreta) nunca estiveram na lista de
+    veículo — R$8,98k (carretinha/reboque 1 eixo) classificado como pneu."""
+
+    def test_carretinha_reboque_e_false(self):
+        assert eh_pneu_de_verdade(
+            "CARRETINHA REBOQUE 1 EIXO FECHADA PARA VEICULO, PNEUS 145/80 R13"
+        ) is False
+
+    def test_reboque_para_motocicleta_e_false(self):
+        assert eh_pneu_de_verdade(
+            "REBOQUE PARA MOTOCICLETA, chassi em aço, pneus 3.00-10"
+        ) is False
+
+
+class TestRaparoTypoDeReparo:
+    """Bug menor: 'RAPARO' (erro ortográfico de 'REPARO', 2 itens reais achados)
+    não batia RE_SERVICO_INICIO (só reconhecia a grafia correta)."""
+
+    def test_raparo_typo_e_false(self):
+        assert eh_pneu_de_verdade("RAPARO PNEU LT 245/70 R16") is False
 

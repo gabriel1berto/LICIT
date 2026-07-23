@@ -141,7 +141,7 @@ def processar(con, cur, numero_controle: str):
     itens_onco = []
     for it in itens:
         descricao = it.get("descricao") or ""
-        eh_onco = eh_medicamento_onco_de_verdade(descricao)
+        eh_onco = eh_medicamento_onco_de_verdade(descricao, it.get("materialOuServico"))
         principio = principio_ativo_provavel(descricao) if eh_onco else None
         cur.execute("""
             INSERT INTO oncologia.itens (
