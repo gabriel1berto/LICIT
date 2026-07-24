@@ -249,11 +249,21 @@ else:
     tab_mu = (
         preco_medida_uf.groupby(["medida_extraida", "uf"], as_index=False)
         .agg(preco_mediano=("valor_unitario_resultado", "median"), n=("valor_unitario_resultado", "size"),
-             editais=("numero_controle_pncp", "nunique"))
+             editais=("numero_controle_pncp", "nunique"),
+             preco_min=("valor_unitario_resultado", "min"), preco_max=("valor_unitario_resultado", "max"))
     )
     tab_mu["preco_mediano_nacional"] = tab_mu["medida_extraida"].map(mediana_nacional)
     tab_mu["premio_pct"] = (tab_mu["preco_mediano"] / tab_mu["preco_mediano_nacional"] - 1) * 100
     tab_mu["confianca"] = pd.cut(tab_mu["n"], bins=[0, 4, 14, float("inf")], labels=["baixa", "média", "alta"])
+    # achado 24/jul/2026: n=2+ já sobrevive ao corte de venda isolada, mas 2 vendas do
+    # MESMO fármaco no MESMO estado podem ainda ter preço unitário incompatível entre si
+    # (ex: Capecitabina em MG — R$255,03 e R$1,90 na mesma célula, 134x de diferença) —
+    # sinal forte de embalagem/apresentação/dose diferente sendo somada como se fosse a
+    # mesma unidade (o filtro só sabe o princípio ativo, não dose/apresentação — ainda
+    # não existe pro onco um "medida matcher" tipo o do pneu). Razão max/min > 10x não
+    # acontece por variação regional de preço real (não visto em nenhuma célula limpa
+    # da amostra) — é proxy de mistura de unidade, não de mercado.
+    tab_mu["dispersao_suspeita"] = tab_mu["preco_max"] / tab_mu["preco_min"].replace(0, pd.NA) > 10
     tab_mu = tab_mu.sort_values(["medida_extraida", "premio_pct"], ascending=[True, False])
 
     col_ref, col_heat = st.columns([1, 1])
@@ -265,15 +275,26 @@ else:
             tab_mu_fmt["preco_mediano"] = tab_mu_fmt["preco_mediano"].round(2)
             tab_mu_fmt["preco_mediano_nacional"] = tab_mu_fmt["preco_mediano_nacional"].round(2)
             tab_mu_fmt["premio_pct"] = tab_mu_fmt["premio_pct"].round(1)
+            tab_mu_fmt["dispersao_suspeita"] = tab_mu_fmt["dispersao_suspeita"].apply(
+                lambda v: "⚠️ suspeita" if v else "—"
+            )
             st.dataframe(
                 tab_mu_fmt.rename(columns={
                     "medida_extraida": "Fármaco", "uf": "UF", "preco_mediano": "Preço mediano UF (R$/un)",
                     "preco_mediano_nacional": "Preço mediano BR (R$/un)", "premio_pct": "Prêmio regional (%)",
                     "n": "Itens vendidos", "editais": "Editais ganhos", "confianca": "Confiança",
-                }),
+                    "dispersao_suspeita": "Dispersão",
+                })[["Fármaco", "UF", "Preço mediano UF (R$/un)", "Preço mediano BR (R$/un)", "Prêmio regional (%)",
+                    "Itens vendidos", "Editais ganhos", "Confiança", "Dispersão"]],
                 use_container_width=True, hide_index=True, height=450,
             )
-        st.caption("Todas as UF com pelo menos 1 venda. Coluna Confiança avisa amostra pequena. Top 8 fármacos mais pedidos nacionalmente.")
+        st.caption(
+            "Todas as UF com pelo menos 1 venda. Coluna Confiança avisa amostra pequena. "
+            "Coluna Dispersão avisa quando o preço máximo é 10x+ o mínimo dentro da MESMA "
+            "célula (fármaco+UF) — sinal de embalagem/apresentação diferente sendo somada "
+            "como se fosse a mesma unidade, não variação real de mercado. Top 8 fármacos "
+            "mais pedidos nacionalmente."
+        )
 
     with col_heat:
         medida_escolhida = st.selectbox("Fármaco do mapa de calor:", ["Todos os fármacos"] + top_medidas_nomes_8.tolist())
@@ -288,7 +309,7 @@ else:
             # 2 pontos concordando, informação real mesmo que pouca — threshold final
             # exclui só n=1, mantém n=2+ no agregado (confirmado: 21 UF com dado em
             # 2026 usando n>=2, contra só 1 UF usando o corte anterior de n>4).
-            tab_mu_confiavel = tab_mu[tab_mu["n"] > 1]
+            tab_mu_confiavel = tab_mu[(tab_mu["n"] > 1) & (~tab_mu["dispersao_suspeita"].fillna(False))]
             heat = (
                 tab_mu_confiavel.groupby("uf", as_index=False)
                       .agg(premio_pct=("premio_pct", "mean"), n=("medida_extraida", "size"))
