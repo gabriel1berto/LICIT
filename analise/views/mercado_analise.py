@@ -313,17 +313,17 @@ else:
     with col_heat:
         medida_escolhida = st.selectbox("Medida do mapa de calor:", ["Todas as medidas"] + top_medidas_nomes_8.tolist())
         if medida_escolhida == "Todas as medidas":
-            # achado 24/jul/2026 (mesmo bug achado no dashboard onco): média SEM filtro
-            # de confiança deixava 1 venda isolada (n=1) dominar sozinha a média da UF —
-            # exclui "confiança: baixa" (n≤4) do agregado, continua visível na tabela ao
-            # lado com a coluna Confiança avisando.
-            tab_mu_confiavel = tab_mu[tab_mu["confianca"] != "baixa"]
+            # achado 24/jul/2026 (mesmo bug achado no dashboard onco, mesmo ajuste):
+            # 1ª tentativa excluiu confiança "baixa" inteira (n≤4) — forte demais,
+            # corte final exclui só n=1 (venda isolada, sem robustez nenhuma), mantém
+            # n=2+ no agregado (n=2+ já concorda entre pontos, informação real).
+            tab_mu_confiavel = tab_mu[tab_mu["n"] > 1]
             heat = (
                 tab_mu_confiavel.groupby("uf", as_index=False)
                       .agg(premio_pct=("premio_pct", "mean"), n=("medida_extraida", "size"))
                       .sort_values("premio_pct", ascending=True)
             )
-            titulo_heat = "Prêmio regional médio — todas as medidas (confiança média/alta)"
+            titulo_heat = "Prêmio regional médio — todas as medidas (exclui venda isolada, n=1)"
             legenda_n = "Nº de medidas com amostra"
         else:
             heat = tab_mu[tab_mu["medida_extraida"] == medida_escolhida].sort_values("premio_pct", ascending=True)
@@ -352,9 +352,9 @@ else:
             if medida_escolhida == "Todas as medidas":
                 st.caption(
                     "Azul = paga acima da mediana nacional. Vermelho = abaixo. Medida com "
-                    "confiança baixa (n≤4 vendas) fica de fora dessa média resumo — 1 venda "
-                    "isolada não deve dominar sozinha o número da UF. Ver tabela ao lado pro "
-                    "detalhe completo, incluindo os de confiança baixa."
+                    "1 venda isolada fica de fora dessa média resumo (n=1 não tem como "
+                    "distinguir preço real de erro de digitação) — Ver tabela ao lado pro "
+                    "detalhe completo, incluindo os de confiança baixa/venda única."
                 )
             else:
                 st.caption("Azul = paga acima da mediana nacional. Vermelho = abaixo. Todas as UF com pelo menos 1 venda — cuidado com UF de amostra pequena (ver tabela ao lado).")

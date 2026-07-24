@@ -278,19 +278,23 @@ else:
     with col_heat:
         medida_escolhida = st.selectbox("Fármaco do mapa de calor:", ["Todos os fármacos"] + top_medidas_nomes_8.tolist())
         if medida_escolhida == "Todos os fármacos":
-            # achado 24/jul/2026: média SEM filtro de confiança deixava 1 venda isolada
-            # (n=1, ex: Abiraterona no MA — R$172 vs mediana nacional R$5,42, prêmio de
-            # +3073%) dominar sozinha a média da UF (só 3-4 fármacos por UF em geral,
-            # 1 outlier de n=1 puxa o "Todos" inteiro pra um valor absurdo). Exclui
-            # "confiança: baixa" (n≤4) do agregado — continua visível na tabela ao lado,
-            # com a coluna Confiança avisando, só não entra na média resumo.
-            tab_mu_confiavel = tab_mu[tab_mu["confianca"] != "baixa"]
+            # achado 24/jul/2026: média SEM filtro deixava 1 venda isolada (n=1, ex:
+            # Abiraterona no MA — R$172 vs mediana nacional R$5,42, prêmio de +3073%)
+            # dominar sozinha a média da UF. 1ª tentativa excluiu confiança "baixa"
+            # inteira (n≤4) — forte demais: com o filtro padrão de período em 2026
+            # (pipeline novo, poucos meses de dado), só SP sobrava com célula suficiente,
+            # o gráfico "resumo" virou 1 UF só. n=1 é o caso realmente sem robustez
+            # nenhuma (não dá pra saber se é preço ou erro de digitação); n=2+ já tem
+            # 2 pontos concordando, informação real mesmo que pouca — threshold final
+            # exclui só n=1, mantém n=2+ no agregado (confirmado: 21 UF com dado em
+            # 2026 usando n>=2, contra só 1 UF usando o corte anterior de n>4).
+            tab_mu_confiavel = tab_mu[tab_mu["n"] > 1]
             heat = (
                 tab_mu_confiavel.groupby("uf", as_index=False)
                       .agg(premio_pct=("premio_pct", "mean"), n=("medida_extraida", "size"))
                       .sort_values("premio_pct", ascending=True)
             )
-            titulo_heat = "Prêmio regional médio — todos os fármacos (confiança média/alta)"
+            titulo_heat = "Prêmio regional médio — todos os fármacos (exclui venda isolada, n=1)"
             legenda_n = "Nº de fármacos com amostra"
         else:
             heat = tab_mu[tab_mu["medida_extraida"] == medida_escolhida].sort_values("premio_pct", ascending=True)
@@ -316,9 +320,9 @@ else:
             if medida_escolhida == "Todos os fármacos":
                 st.caption(
                     "Azul = paga acima da mediana nacional. Vermelho = abaixo. Fármaco com "
-                    "confiança baixa (n≤4 vendas) fica de fora dessa média resumo — 1 venda "
-                    "isolada não deve dominar sozinha o número da UF. Ver tabela ao lado pro "
-                    "detalhe completo, incluindo os de confiança baixa."
+                    "1 venda isolada fica de fora dessa média resumo (n=1 não tem como "
+                    "distinguir preço real de erro de digitação) — Ver tabela ao lado pro "
+                    "detalhe completo, incluindo os de confiança baixa/venda única."
                 )
             else:
                 st.caption("Azul = paga acima da mediana nacional. Vermelho = abaixo. Cuidado com UF de amostra pequena (ver tabela ao lado).")
