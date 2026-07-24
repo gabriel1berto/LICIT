@@ -42,12 +42,11 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "- `data_encerramento_proposta` no futuro (cache expira a cada 5min).\n"
         "- Pelo menos 1 item bate `eh_medicamento_onco = TRUE`.\n"
         "- Modalidade **não é** Leilão.\n\n"
-        "Diferente do Radar de pneu: **sem teto de valor por item** — medicamento "
-        "oncológico (biológico/alvo molecular) legitimamente custa dezenas de milhares "
-        "por unidade, um teto copiado do pneu descartaria item real. **Sem \"meu preço\"** — "
-        "LICIT não tem fornecedor de medicamento cotado ainda, só o preço médio histórico "
-        "(mediana do que já venceu processo parecido) aparece em Detalhes, como referência "
-        "de mercado, não comparação com custo próprio.\n\n"
+        "**Sem teto de valor por item** — medicamento oncológico (biológico/alvo molecular) "
+        "legitimamente custa dezenas de milhares por unidade, um teto genérico descartaria "
+        "item real. **Sem \"meu preço\"** — LICIT não tem fornecedor de medicamento cotado "
+        "ainda, só o preço médio histórico (mediana do que já venceu processo parecido) "
+        "aparece em Detalhes, como referência de mercado, não comparação com custo próprio.\n\n"
         "**CAPAG** (Tesouro Nacional, ano base 2025): 🟢 A+/A · 🟡 B+/B · 🔴 C/D — risco de "
         "atraso/calote no pagamento depois de vencer, não qualidade do edital em si."
     )
@@ -57,7 +56,28 @@ if editais.empty:
     st.info("Nenhum edital com medicamento oncológico e proposta aberta no momento.")
     st.stop()
 
-col_uf, col_mod, col_regime = st.columns(3)
+_capag_mun = carregar_capag_municipios()
+_capag_uf = carregar_capag_estados()
+MAPA_CAPAG_MUN = dict(zip(_capag_mun["codigo_ibge"], _capag_mun["capag"]))
+MAPA_CAPAG_UF = dict(zip(_capag_uf["uf"], _capag_uf["capag"]))
+
+_CAPAG_BUCKET_LABEL = {"boa": "🟢 Boa (A+/A)", "media": "🟡 Média (B+/B)", "ruim": "🔴 Ruim (C/D)"}
+
+
+def _capag_bucket_de(codigo_ibge, uf) -> str:
+    nota, _ = capag_do_orgao(codigo_ibge, uf, MAPA_CAPAG_MUN, MAPA_CAPAG_UF)
+    if not nota:
+        return "⚪ Sem dado"
+    cor_nota = cor_capag(nota)
+    chave = "boa" if cor_nota == COR_STATUS_GOOD else "media" if cor_nota == COR_STATUS_WARNING else "ruim"
+    return _CAPAG_BUCKET_LABEL[chave]
+
+
+editais["capag_bucket"] = editais.apply(
+    lambda r: _capag_bucket_de(r["codigo_ibge"], r["uf"]), axis=1
+)
+
+col_uf, col_mod, col_regime, col_capag = st.columns(4)
 with col_uf:
     uf_sel = st.multiselect("UF", sorted(editais["uf"].dropna().unique()), key="uf_radar_onco")
 with col_mod:
@@ -69,6 +89,12 @@ with col_regime:
         "Regime", sorted(editais["regime"].dropna().unique()), key="regime_radar_onco",
         help="RP = Registro de Preço (SRP) · CD = Compra Direta (sem SRP)",
     )
+with col_capag:
+    capag_sel = st.multiselect(
+        "CAPAG", sorted(editais["capag_bucket"].unique()), key="capag_radar_onco",
+        help="Confiabilidade fiscal do órgão (Tesouro Nacional, ano base 2025) — risco de "
+        "atraso/calote no pagamento depois de vencer, não qualidade do edital em si.",
+    )
 
 if uf_sel:
     editais = editais[editais["uf"].isin(uf_sel)]
@@ -76,17 +102,14 @@ if mod_sel:
     editais = editais[editais["modalidade_licitacao_nome"].isin(mod_sel)]
 if regime_sel:
     editais = editais[editais["regime"].isin(regime_sel)]
+if capag_sel:
+    editais = editais[editais["capag_bucket"].isin(capag_sel)]
 
 if editais.empty:
     st.warning("Nenhum edital aberto bate esses filtros.")
     st.stop()
 
 st.caption(f"{len(editais)} edital(is) aberto(s) com medicamento oncológico, nesse filtro.")
-
-_capag_mun = carregar_capag_municipios()
-_capag_uf = carregar_capag_estados()
-MAPA_CAPAG_MUN = dict(zip(_capag_mun["codigo_ibge"], _capag_mun["capag"]))
-MAPA_CAPAG_UF = dict(zip(_capag_uf["uf"], _capag_uf["capag"]))
 
 BUCKETS = [
     ("🔴", "Urgente", "até 2 dias", COR_STATUS_CRITICAL, lambda d: d <= 2),

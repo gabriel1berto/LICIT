@@ -222,9 +222,16 @@ def preparar_pagina_onco():
         hoje_str = date.today().strftime("%Y-%m")
         fim_candidatos = [m for m in meses_disponiveis if m <= hoje_str]
         fim_default = max(fim_candidatos) if fim_candidatos else meses_disponiveis[-1]
+        # achado 24/jul/2026: default anterior abria com TODO o histórico (2021+), mas o
+        # vocabulário só foi validado/estabilizado pra 2026 — anos anteriores têm cobertura
+        # de busca/vocabulário diferente (termos adicionados ao longo do double-check de
+        # 23/jul), não são comparáveis de cabeça. Default agora abre só em 2026; slider
+        # continua permitindo expandir pro histórico se o usuário quiser.
+        ini_candidatos_2026 = [m for m in meses_disponiveis if m >= "2026-01"]
+        ini_default = min(ini_candidatos_2026) if ini_candidatos_2026 else meses_disponiveis[0]
         mes_ini, mes_fim = st.sidebar.select_slider(
             "Período (ano-mês)", options=meses_disponiveis,
-            value=(meses_disponiveis[0], fim_default),
+            value=(ini_default, fim_default),
         )
     else:
         mes_ini, mes_fim = None, None

@@ -104,6 +104,30 @@ combos_rt = ["RP - Dispensa", "RP - Pregão", "CD - Dispensa", "CD - Pregão"]
 
 with col_desc:
     st.subheader("Desconto por regime x tipo")
+    with regra("ℹ️ O que esse desconto considera"):
+        st.markdown(
+            "**O que é \"desconto\":** compara o preço unitário que **realmente venceu** a "
+            "licitação (`valor_unitario_resultado`) contra o preço unitário de **referência "
+            "publicado pelo próprio órgão** no edital (`valor_unitario_estimado`) — "
+            "`desconto% = 1 − resultado/estimado`. Não é desconto de tabela de distribuidor, "
+            "é o quanto o mercado pagou a menos (ou a mais) do que o órgão esperava pagar.\n\n"
+            "**Regime — RP x CD:** RP = Registro de Preço (ata válida por até 1 ano, outros "
+            "órgãos podem \"pegar carona\"). CD = Compra/Contratação Direta (compra pontual, "
+            "sem ata).\n\n"
+            "**Tipo — Dispensa x Pregão:** Dispensa = contratação direta sem disputa de lance "
+            "(valor baixo ou hipótese legal do Art. 75 da Lei 14.133/21). Pregão = disputa de "
+            "lance real entre fornecedores.\n\n"
+            "**O que fica de fora:** item sem valor estimado OU sem resultado homologado ainda "
+            "(a maioria dos processos em aberto) e item com valor estimado ≤ R$1 (placeholder "
+            "simbólico do órgão, sem preço de referência real — dividir por isso explodiria a "
+            "porcentagem).\n\n"
+            "**Por que mediana, não média:** 1 processo com preço mal publicado (erro de "
+            "digitação, ordem de grandeza errada) distorce a média inteira — mediana é robusta "
+            "a esse tipo de outlier.\n\n"
+            "**Cuidado com amostra pequena:** célula com poucos itens (ver contagem no caption "
+            "abaixo) pode não representar o regime/tipo de verdade — não compare 2 células com "
+            "N muito diferente como se fossem igualmente confiáveis."
+        )
     preco_regime = df.dropna(subset=["valor_unitario_estimado", "valor_unitario_resultado"])
     preco_regime = preco_regime[preco_regime["valor_unitario_estimado"] > 1]
     if preco_regime.empty:
@@ -254,12 +278,19 @@ else:
     with col_heat:
         medida_escolhida = st.selectbox("Fármaco do mapa de calor:", ["Todos os fármacos"] + top_medidas_nomes_8.tolist())
         if medida_escolhida == "Todos os fármacos":
+            # achado 24/jul/2026: média SEM filtro de confiança deixava 1 venda isolada
+            # (n=1, ex: Abiraterona no MA — R$172 vs mediana nacional R$5,42, prêmio de
+            # +3073%) dominar sozinha a média da UF (só 3-4 fármacos por UF em geral,
+            # 1 outlier de n=1 puxa o "Todos" inteiro pra um valor absurdo). Exclui
+            # "confiança: baixa" (n≤4) do agregado — continua visível na tabela ao lado,
+            # com a coluna Confiança avisando, só não entra na média resumo.
+            tab_mu_confiavel = tab_mu[tab_mu["confianca"] != "baixa"]
             heat = (
-                tab_mu.groupby("uf", as_index=False)
+                tab_mu_confiavel.groupby("uf", as_index=False)
                       .agg(premio_pct=("premio_pct", "mean"), n=("medida_extraida", "size"))
                       .sort_values("premio_pct", ascending=True)
             )
-            titulo_heat = "Prêmio regional médio — todos os fármacos"
+            titulo_heat = "Prêmio regional médio — todos os fármacos (confiança média/alta)"
             legenda_n = "Nº de fármacos com amostra"
         else:
             heat = tab_mu[tab_mu["medida_extraida"] == medida_escolhida].sort_values("premio_pct", ascending=True)
@@ -282,7 +313,15 @@ else:
             fig_heat.update_layout(coloraxis_showscale=False, height=max(400, 24 * len(heat)))
             fundo_transparente(fig_heat)
             st.plotly_chart(fig_heat, use_container_width=True)
-            st.caption("Azul = paga acima da mediana nacional. Vermelho = abaixo. Cuidado com UF de amostra pequena (ver tabela ao lado).")
+            if medida_escolhida == "Todos os fármacos":
+                st.caption(
+                    "Azul = paga acima da mediana nacional. Vermelho = abaixo. Fármaco com "
+                    "confiança baixa (n≤4 vendas) fica de fora dessa média resumo — 1 venda "
+                    "isolada não deve dominar sozinha o número da UF. Ver tabela ao lado pro "
+                    "detalhe completo, incluindo os de confiança baixa."
+                )
+            else:
+                st.caption("Azul = paga acima da mediana nacional. Vermelho = abaixo. Cuidado com UF de amostra pequena (ver tabela ao lado).")
 
 st.divider()
 st.subheader("Mapa por município")
