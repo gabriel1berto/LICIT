@@ -7,6 +7,8 @@ manual, 1 ferramenta por vez (CLAUDE.md §17.8) — dashboard é público, não 
 pra disparar chamada de API/Claude/Notion sozinho.
 """
 
+from urllib.parse import urlparse
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -81,12 +83,41 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "vale participar."
     )
 
+# Nome legível pros sistemas de pregão mais comuns na base — o dado bruto
+# (link_sistema_origem, vem do PNCP) é o domínio completo, fragmentado em 20+
+# sistemas diferentes (achado 28/jul/2026). Fora dessa lista cai no domínio cru;
+# link vazio (~40% dos editais) vira "Não informado", não é bug, é o órgão não
+# preenchendo esse campo no PNCP.
+_PORTAIS_CONHECIDOS = {
+    "cnetmobile.estaleiro.serpro.gov.br": "Comprasnet (SERPRO)",
+    "portaldecompraspublicas.com.br": "Portal de Compras Públicas",
+    "bllcompras.com": "BLL Compras",
+    "bnccompras.com": "BNC Compras",
+    "portal.licitanet.com.br": "LicitaNet",
+    "licitanet.com.br": "LicitaNet",
+    "app2.licitardigital.com.br": "Licitar Digital",
+    "licitamaisbrasil.com.br": "Licita Mais Brasil",
+    "app2.ammlicita.org.br": "AMM Licita",
+    "licitacoes-e2.bb.com.br": "Licitações-e (BB)",
+    "pregaobanrisul.com.br": "Pregão Banrisul",
+}
+
+
+def _portal_de(link: str | None) -> str:
+    if not link or not link.strip():
+        return "Não informado"
+    dominio = (urlparse(link.strip()).netloc or link.strip()).lower().removeprefix("www.")
+    return _PORTAIS_CONHECIDOS.get(dominio, dominio or "Não informado")
+
+
 editais = carregar_editais_abertos()
 if editais.empty:
     st.info("Nenhum edital com pneu e proposta aberta no momento.")
     st.stop()
 
-col_uf, col_mod, col_cat, col_regime = st.columns(4)
+editais["portal"] = editais["link_sistema_origem"].apply(_portal_de)
+
+col_uf, col_mod, col_cat, col_regime, col_portal = st.columns(5)
 with col_uf:
     uf_sel = st.multiselect("UF", sorted(editais["uf"].dropna().unique()), key="uf_radar")
 with col_mod:
@@ -101,6 +132,12 @@ with col_regime:
         "Regime", sorted(editais["regime"].dropna().unique()), key="regime_radar",
         help="RP = Registro de Preço (SRP) · CD = Compra Direta (sem SRP)",
     )
+with col_portal:
+    portal_sel = st.multiselect(
+        "Portal", sorted(editais["portal"].unique()), key="portal_radar",
+        help="Onde a sessão do pregão acontece de fato (link_sistema_origem do PNCP) — "
+        "PNCP só publica o edital, a disputa em si roda num sistema separado.",
+    )
 
 if uf_sel:
     editais = editais[editais["uf"].isin(uf_sel)]
@@ -110,6 +147,8 @@ if regime_sel:
     editais = editais[editais["regime"].isin(regime_sel)]
 if cat_sel:
     editais = editais[editais["categorias"].fillna("").apply(lambda s: any(c in s for c in cat_sel))]
+if portal_sel:
+    editais = editais[editais["portal"].isin(portal_sel)]
 
 if editais.empty:
     st.warning("Nenhum edital aberto bate esses filtros.")
