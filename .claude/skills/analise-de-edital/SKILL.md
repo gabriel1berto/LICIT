@@ -2,16 +2,27 @@
 name: analise-de-edital
 description: >
   Processo padrão pra analisar edital de licitação (Camada 1) e gerar parecer
-  jurídico (Camada 2) do projeto LICIT — rodando localmente com Claude Code,
-  sem chamar a API paga da Anthropic (analisa_edital.py/parecer_juridico.py
-  usam anthropic.Anthropic() internamente; esse fluxo substitui essa chamada
-  pela análise direta do Claude Code, reusando as mesmas funções puras de
-  download/validação/escrita no Notion). Carrega quando o usuário pedir pra
-  analisar edital, gerar parecer jurídico, ou rodar Camada 1/Camada 2 do LICIT.
+  jurídico (Camada 2) do projeto LICIT — SEMPRE as duas juntas, rodando
+  localmente com Claude Code, sem chamar a API paga da Anthropic
+  (analisa_edital.py/parecer_juridico.py usam anthropic.Anthropic()
+  internamente; esse fluxo substitui essa chamada pela análise direta do
+  Claude Code, reusando as mesmas funções puras de download/validação/escrita
+  no Notion). Carrega quando o usuário pedir pra analisar edital (dispara
+  Camada 1 + Camada 2 automaticamente), gerar parecer jurídico, ou rodar
+  Camada 1/Camada 2 do LICIT.
 tags: [licit, edital, business]
 ---
 
 # Análise de Edital (Camada 1 + Camada 2, sem custo de API)
+
+## Regra fixa: as duas camadas sempre juntas (28/jul/2026)
+
+Rodar essa skill = rodar Camada 1 **e** Camada 2, sempre, sem esperar decisão
+separada do usuário. Isso substitui a regra antiga de `parecer_juridico.py`
+("só roda manualmente, decisão própria do usuário") — só valia pro script
+pago via API; rodando localmente e de graça, não tem motivo pra gatear.
+`evoluir_parecer_juridico` (campo da Camada 1) vira só um alerta de prioridade
+dentro do parecer, não um gate de "roda ou não roda".
 
 ## Por que existe
 
