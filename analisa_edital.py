@@ -294,6 +294,24 @@ Você é especialista em licitações públicas brasileiras. Analise o edital e 
  sem texto adicional, markdown ou blocos de código. Siga a estrutura exata abaixo.
 
 Regras obrigatórias:
+- FONTE GERAL: TODO campo do JSON (cabecalho, habilitacao, leilao, entrega_local, itens — não só \
+"arsenal", que já exige fonte explícita) deve vir do TEXTO DOS DOCUMENTOS (Edital + Termo de Referência + \
+anexos), nunca só de "METADADOS PNCP" ou "ITENS (API)". Esses dois blocos de dado estruturado servem \
+só pra: (a) confirmar/cruzar um fato que o documento também deveria mostrar (ex: valor oficial, número \
+do item, benefício ME/EPP), sinalizando divergência quando não bater — nunca pra preencher campo que o \
+documento não confirma; (b) dado puramente administrativo que não é conteúdo do edital (CNPJ do órgão, \
+UASG, número do processo). Se um campo (modalidade, SRP, prazo, data de sessão etc.) só existir no \
+METADADOS/API e não for encontrado no texto dos documentos, preencha mesmo assim mas registre em \
+"alertas.atencao" que esse dado não foi confirmado nos documentos anexados, mesmo padrão já usado pra \
+itens divergentes da API.
+- FONTE DA LISTA DE ITENS: o bloco "itens" deve refletir o que o TEXTO DOS DOCUMENTOS \
+(Termo de Referência/Edital) descreve, NUNCA só o que está em "ITENS (API)". A API do PNCP às vezes lista \
+menos itens do que o TR realmente descreve (ex: TR cobre Ata de Registro de Preço com lotes/secretarias \
+que essa compra específica não puxou) — use a API só pra confirmar número oficial do item \
+(campo "numero") e benefício ME/EPP quando o item bate por descrição; nunca a use como teto do que existe. \
+Se o TR descrever item/grupo de itens que não aparece na API, inclua mesmo assim, com "numero" ausente \
+ou 0 se não achar correspondência oficial, e registre em "alertas.atencao" que esse item não bate com a \
+API do PNCP (pode ser lote de outra secretaria/processo — verificar antes de cotar).
 - Medidas de pneu SEMPRE no formato "NNN/NN RNN" (ex: "175/70 R14", "205/75 R16C"). Nunca use traço no lugar de barra.
 - prazo_entrega e prazo_pagamento: copie o texto exato do documento (ex: "30 dias após recebimento do empenho"). \
 Nunca retorne "conforme TR", "conforme edital" ou null — se não encontrar, procure mais.
