@@ -35,7 +35,13 @@ PNCP_BASE        = "https://pncp.gov.br/api/pncp/v1/orgaos"
 PNCP_CONSULTA_BASE = "https://pncp.gov.br/api/consulta/v1/orgaos"
 NOTION_BASE      = "https://api.notion.com/v1"
 NOTION_VERSION   = "2022-06-28"
-MAX_TEXT_CHARS   = 60_000
+MAX_TEXT_CHARS   = 500_000
+# achado 28/jul/2026 (Marialva-PR): 60_000 cortava ~65% de um documento de 173k chars
+# ANTES de chegar no Claude — grupo de 57 itens do TR nunca entrava no contexto, nenhum
+# ajuste de prompt resolvia isso (a regra "todo campo vem do documento" precisa do
+# documento inteiro estar no contexto). Sonnet 4.6 tem 1M tokens de janela — 500k chars
+# (~125k tokens) é folga generosa pra edital+TR+anexos reais, ainda com teto pra não
+# explodir custo/latência num documento realmente patológico.
 
 # ─── PNCP ─────────────────────────────────────────────────────────────────────
 
@@ -53,6 +59,25 @@ def pncp_get(path: str):
     r = requests.get(f"{PNCP_BASE}/{path}", timeout=30)
     r.raise_for_status()
     return r.json()
+
+def pncp_get_itens(path: str) -> list:
+    """Endpoint de itens é paginado pelo PNCP (achado 28/jul/2026, Marialva-PR: sem
+    parâmetro de página, retorna só 10 itens com status 200 — sem erro, sem header de
+    paginação, silenciosamente incompleto. Processo real tinha 57 itens em 2 páginas de
+    tamanhoPagina=50). SEMPRE percorrer até página vazia, nunca confiar numa chamada só."""
+    todos = []
+    pagina = 1
+    while True:
+        r = requests.get(
+            f"{PNCP_BASE}/{path}", params={"pagina": pagina, "tamanhoPagina": 50}, timeout=30
+        )
+        r.raise_for_status()
+        lote = r.json()
+        if not lote:
+            break
+        todos.extend(lote)
+        pagina += 1
+    return todos
 
 def pncp_get_consulta(path: str) -> dict:
     """api/consulta/v1 — tem valorTotalEstimado/objetoCompra (pncp_get não tem,
@@ -453,7 +478,11 @@ def analisar(texto: str, metadados: dict, itens_api: list, trechos_criticos: lis
     )
     resp = cliente.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=4096,
+        max_tokens=8192,
+        # achado 28/jul/2026 (mesma sessão do fix de MAX_TEXT_CHARS): com o documento
+        # inteiro chegando no contexto, edital de 57 itens estourou 4096 tokens de saída
+        # e cortou o JSON no meio (JSONDecodeError). 8192 dá folga pra edital grande sem
+        # o output virar o novo gargalo depois de resolver o de input.
         system=PROMPT_SISTEMA,
         messages=[{"role": "user", "content":
             f"Estrutura esperada:\n{PROMPT_ESTRUTURA}\n\nEDITAL:\n{contexto}"}]
@@ -809,7 +838,7 @@ def main():
     print(f"   CNPJ {cnpj} · {ano} · {seq_s}", file=sys.stderr)
 
     metadados = pncp_get(f"{cnpj}/compras/{ano}/{seq_s}")
-    itens_api = pncp_get(f"{cnpj}/compras/{ano}/{seq_s}/itens")
+    itens_api = pncp_get_itens(f"{cnpj}/compras/{ano}/{seq_s}/itens")
     try:
         metadados_oficial = pncp_get_consulta(f"{cnpj}/compras/{ano}/{seq_s}")
     except Exception as e:

@@ -103,7 +103,7 @@ def gerar_parecer(analise: dict) -> dict:
     cliente = anthropic.Anthropic()
     resp = cliente.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=4096,
+        max_tokens=8192,
         system=PROMPT_SISTEMA,
         messages=[{"role": "user", "content":
             f"ARSENAL JURÍDICO:\n{arsenal_texto}\n\n"
