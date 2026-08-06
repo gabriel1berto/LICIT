@@ -103,11 +103,46 @@ _PORTAIS_CONHECIDOS = {
 }
 
 
-def _portal_de(link: str | None) -> str:
+def _dominio_de(link: str | None) -> str | None:
     if not link or not link.strip():
+        return None
+    return (urlparse(link.strip()).netloc or link.strip()).lower().removeprefix("www.") or None
+
+
+def _portal_de(dominio: str | None) -> str:
+    if not dominio:
         return "Não informado"
-    dominio = (urlparse(link.strip()).netloc or link.strip()).lower().removeprefix("www.")
-    return _PORTAIS_CONHECIDOS.get(dominio, dominio or "Não informado")
+    return _PORTAIS_CONHECIDOS.get(dominio, dominio)
+
+
+# Custo pro FORNECEDOR (não pro órgão) de participar — pesquisado individualmente
+# 06/ago/2026 (fonte: site oficial de cada portal + ConLicitação/Effecti), não é
+# suposição. "Pago" cobre qualquer modelo (mensalidade, taxa por certame, comissão
+# sobre lote vencido) — o achado real foi que a maioria dos portais privados de
+# maior volume é paga, ao contrário do que se assumiria de cara. Fora dessa lista
+# (inclui domínio de prefeitura/estado sem link mapeado) cai em "Não identificado"
+# — nunca inventar cobrança sem fonte, mesmo pra portal pequeno.
+_CUSTO_FORNECEDOR = {
+    "cnetmobile.estaleiro.serpro.gov.br": "Grátis",   # SICAF, federal — sem taxa
+    "pregaobanrisul.com.br": "Grátis",                # registro grátis, sem taxa de disputa
+    "portaldecompraspublicas.com.br": "Pago",         # R$129/crédito ou assinatura
+    "bnccompras.com": "Pago",                          # plano de participação obrigatório
+    "bllcompras.com": "Pago",                          # comissão 1,5%/R$600 sobre lote vencido
+    "app2.licitardigital.com.br": "Pago",              # taxa de ressarcimento de TI (Lei 14.133)
+    "app2.ammlicita.org.br": "Pago",                   # 1,3% do valor homologado, até R$500
+    "licitanet.com.br": "Pago",
+    "portal.licitanet.com.br": "Pago",
+    "licitacoes-e2.bb.com.br": "Pago",                 # mensalidade/anual de validação de acesso
+    "comprasbr.com.br": "Pago",                        # R$96/leilão avulso (plano único)
+}
+
+
+def _custo_fornecedor(dominio: str | None) -> str:
+    if not dominio:
+        return "Não identificado"
+    if dominio.endswith(".gov.br"):
+        return "Grátis"  # sistema do próprio ente público, sem intermediário comercial
+    return _CUSTO_FORNECEDOR.get(dominio, "Não identificado")
 
 
 editais = carregar_editais_abertos()
@@ -115,9 +150,11 @@ if editais.empty:
     st.info("Nenhum edital com pneu e proposta aberta no momento.")
     st.stop()
 
-editais["portal"] = editais["link_sistema_origem"].apply(_portal_de)
+editais["portal_dominio"] = editais["link_sistema_origem"].apply(_dominio_de)
+editais["portal"] = editais["portal_dominio"].apply(_portal_de)
+editais["custo_fornecedor"] = editais["portal_dominio"].apply(_custo_fornecedor)
 
-col_uf, col_mod, col_cat, col_regime, col_portal = st.columns(5)
+col_uf, col_mod, col_cat, col_regime, col_portal, col_custo = st.columns(6)
 with col_uf:
     uf_sel = st.multiselect("UF", sorted(editais["uf"].dropna().unique()), key="uf_radar")
 with col_mod:
@@ -138,6 +175,14 @@ with col_portal:
         help="Onde a sessão do pregão acontece de fato (link_sistema_origem do PNCP) — "
         "PNCP só publica o edital, a disputa em si roda num sistema separado.",
     )
+with col_custo:
+    custo_sel = st.multiselect(
+        "Custo p/ fornecedor", ["Grátis", "Pago", "Não identificado"], key="custo_radar",
+        help="Pesquisado por portal 06/ago/2026 (site oficial de cada um) — não é "
+        "estimativa. 'Pago' cobre qualquer modelo (mensalidade, taxa por certame, "
+        "comissão sobre lote vencido). 'Não identificado' = não achamos fonte "
+        "confirmando cobrança ou gratuidade — não custa nada checar antes de descartar.",
+    )
 
 if uf_sel:
     editais = editais[editais["uf"].isin(uf_sel)]
@@ -149,6 +194,8 @@ if cat_sel:
     editais = editais[editais["categorias"].fillna("").apply(lambda s: any(c in s for c in cat_sel))]
 if portal_sel:
     editais = editais[editais["portal"].isin(portal_sel)]
+if custo_sel:
+    editais = editais[editais["custo_fornecedor"].isin(custo_sel)]
 
 if editais.empty:
     st.warning("Nenhum edital aberto bate esses filtros.")
