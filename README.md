@@ -267,11 +267,17 @@ Falso negativo (101 itens — maior achado da rodada):
 Ângulos que não acharam nada (robustez confirmada): NCM (campo nunca populado nesta
 base), `criterio_julgamento_nome`.
 
-## Radar de Editais (Kanban, 16/jul/2026)
+## Radar de Editais (Kanban, 16/jul/2026, colunas por dia desde 11/ago/2026)
 
 Página "🗂️ Radar de Editais" no dashboard — Kanban só-leitura dos editais com item de pneu
-que ainda estão com proposta aberta, agrupado por dias restantes até o encerramento
-(urgente ≤2 dias / esta semana 3-7 / depois >7). Fonte: mesma base do Mercado PNCP
+que ainda estão com proposta aberta. **1 coluna por dia de encerramento** (substituiu, em
+11/ago/2026, as 3 faixas fixas — urgente ≤2 dias / esta semana 3-7 / depois >7): todo dia
+corrido entre hoje e o edital mais distante vira coluna, mesmo sem edital naquele dia,
+cabeçalho mostra a data + quantos dias faltam, cor do topo do card segue a mesma faixa de
+urgência de antes. Linha de colunas tem scroll horizontal próprio (CSS injetado via
+`st.markdown`, escopado por `:has()` — kanban é o único `st.columns()` da página com
+dezenas/centenas de colunas, filtro de 6 colunas no topo não é afetado). Fonte: mesma base
+do Mercado PNCP
 (`conectar_pncp.carregar_editais_abertos()`), filtrada por `situacao_compra_nome =
 'Divulgada no PNCP'` + `data_encerramento_proposta` no futuro — não precisa de scraper novo,
 o dado já é coletado pela Fase 2 (`coletor_pncp_detalhe.py`).

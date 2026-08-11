@@ -27,6 +27,8 @@ from ui_explicacao import cabecalho_pagina, regra
 # script) — aqui é só a mesma constante pra estimar "meu preço" sem abrir a planilha.
 MULTIPLICADOR_PRECO_VENDA = 1.348
 
+WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
 st.title("🗂️ Radar de Editais")
 
 _ultima_carga = carregar_ultima_carga_detalhes()
@@ -54,8 +56,11 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "- Item de pneu com `valor_unitário estimado` acima de R$50 mil é descartado — "
         "mesmo teto que a página Análise de mercado usa pra pegar erro de digitação no "
         "PNCP (achado real 16/jul/2026: câmara de ar de R$521 mil/unidade).\n\n"
-        "Colunas do Kanban agrupam por dias restantes até o encerramento — quanto mais perto "
-        "de 0, mais urgente decidir. Retificação de edital (PNCP gera "
+        "**Colunas do Kanban são 1 por dia de encerramento** (11/ago/2026, substitui as 3 "
+        "faixas fixas de antes) — todo dia corrido entre hoje e o edital mais distante "
+        "aparece, mesmo sem nenhum edital naquele dia; cabeçalho mostra a data e quantos "
+        "dias faltam, cor segue a mesma faixa de urgência de antes (🔴 até 2 dias · 🟡 3 a 7 "
+        "· 🟢 mais de 7). Retificação de edital (PNCP gera "
         "`numero_controle_pncp` novo pro mesmo processo) é deduplicada, mantendo a versão "
         "mais recente. **Valor do card é a soma só dos itens de pneu**, não o valor total do "
         "processo (que pode incluir item não-pneu junto) — quando o processo tem outros "
@@ -317,14 +322,58 @@ ordenar_por = st.radio(
     "Ordenar cards por:", ["Prazo (mais urgente primeiro)", "Valor bem posicionado (maior primeiro)"],
     horizontal=True, key="ordenar_radar",
 )
-cols = st.columns(len(BUCKETS))
-for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
+
+# Kanban por dia (mudou de 3 faixas fixas pra 1 coluna por dia de encerramento,
+# 11/ago/2026 — usuário decidiu mostrar todo dia corrido entre hoje e o edital mais
+# distante, mesmo dia sem edital nenhum, sem agrupar cauda longa numa coluna "resto").
+_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None).date()
+editais["data_dia"] = editais["data_encerramento_proposta"].dt.date
+dias_lista = list(pd.date_range(_hoje, editais["data_dia"].max()).date)
+
+# st.container(key=...) não existe na versão instalada localmente (1.38) — sem chave
+# nomeada pra escopar CSS. :last-of-type falha aqui (há markup do próprio Streamlit
+# depois do último st.columns() na página, então nenhum bloco fica "de fato" último).
+# Escopa em vez disso por CONTEÚDO via :has() — o kanban é o único st.columns() da
+# página com dezenas/centenas de colunas (o outro, filtros, tem só 6) — robusto mesmo
+# se a posição no DOM mudar.
+st.markdown(
+    """
+    <style>
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-child(20)) {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        padding-bottom: 12px;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-child(20)) > div[data-testid="stColumn"],
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-child(20)) > div[data-testid="column"] {
+        min-width: 260px !important;
+        flex: 0 0 260px !important;
+        width: 260px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+cols = st.columns(len(dias_lista))
+for col, dia in zip(cols, dias_lista):
     with col:
-        st.markdown(f"#### {icone} {titulo}")
-        st.caption(subtitulo)
-        bucket = editais[editais["dias_restantes"].apply(cond)].copy()
+        dias_faltam = (dia - _hoje).days
+        icone_dia, cor_dia = "❔", COR_STATUS_GOOD
+        for icone_b, _, _, cor_b, cond_b in BUCKETS:
+            if cond_b(dias_faltam):
+                icone_dia, cor_dia = icone_b, cor_b
+                break
+        st.markdown(f"#### {icone_dia} {WEEKDAYS_PT[dia.weekday()]} {dia.strftime('%d/%m')}")
+        if dias_faltam == 0:
+            st.caption("Encerra hoje")
+        elif dias_faltam == 1:
+            st.caption("Falta 1 dia")
+        else:
+            st.caption(f"Faltam {dias_faltam} dias")
+        bucket = editais[editais["data_dia"] == dia].copy()
         if bucket.empty:
-            st.caption("Nenhum edital nessa faixa.")
+            st.caption("Nenhum edital nesse dia.")
             continue
         if ordenar_por.startswith("Valor"):
             bucket["_valor_pos"] = bucket["numero_controle_pncp"].map(
@@ -336,7 +385,7 @@ for col, (icone, titulo, subtitulo, cor, cond) in zip(cols, BUCKETS):
         for _, row in bucket.iterrows():
             with st.container(border=True):
                 st.markdown(
-                    f'<div style="height:4px;background:{cor};border-radius:2px;margin-bottom:10px;"></div>',
+                    f'<div style="height:4px;background:{cor_dia};border-radius:2px;margin-bottom:10px;"></div>',
                     unsafe_allow_html=True,
                 )
                 dias = row["dias_restantes"]
