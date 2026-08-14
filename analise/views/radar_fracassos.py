@@ -155,24 +155,66 @@ st.dataframe(
 
 st.divider()
 
-# ── Linha a linha ─────────────────────────────────────────────────────────
-st.subheader("Linha a linha")
-tabela = df[[
-    "uf", "orgao_nome", "categoria", "medida_extraida", "situacao_item_nome",
-    "valor_item", "data_encerramento_proposta", "pncp_url",
-]].copy()
-tabela["medida_extraida"] = tabela["medida_extraida"].fillna("—")
-tabela = tabela.sort_values("valor_item", ascending=False)
-st.dataframe(
-    tabela.rename(columns={
-        "uf": "UF", "orgao_nome": "Órgão", "categoria": "Categoria", "medida_extraida": "Medida",
-        "situacao_item_nome": "Situação", "valor_item": "Valor",
-        "data_encerramento_proposta": "Encerrou em", "pncp_url": "PNCP",
-    }),
-    use_container_width=True, hide_index=True,
-    column_config={
-        "Valor": st.column_config.NumberColumn(format="R$ %.2f"),
-        "Encerrou em": st.column_config.DatetimeColumn(format="DD/MM/YYYY"),
-        "PNCP": st.column_config.LinkColumn(display_text="Abrir"),
-    },
-)
+# ── Kanban dia a dia ──────────────────────────────────────────────────────
+# achado 14/ago/2026 (pedido usuário): tabela "linha a linha" virou Kanban por
+# dia de encerramento — mesma lógica visual do radar_abertos.py (1 coluna por
+# dia), mas retrospectivo (dia que o processo FECHOU sem sucesso) em vez de
+# prospectivo (dia que vai encerrar). Diferente do radar_abertos, NÃO mostra
+# todo dia corrido do intervalo — a janela aqui é maior (meses, 2026 inteiro)
+# e a maioria dos dias não tem processo nenhum; mostrar só dia com dado
+# mantém o Kanban navegável em vez de centenas de coluna vazia.
+st.subheader("Dia a dia")
+st.caption("1 coluna por dia em que algum processo fechou Deserto/Fracassado — mais recente primeiro.")
+
+WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+janela_opcoes = {"Últimos 30 dias": 30, "Últimos 60 dias": 60, "Últimos 90 dias": 90, "2026 inteiro": None}
+janela_sel = st.radio("Janela", list(janela_opcoes.keys()), horizontal=True, index=1, key="janela_kanban")
+janela_dias = janela_opcoes[janela_sel]
+
+df_kanban = df.copy()
+df_kanban["data_dia"] = df_kanban["data_encerramento_proposta"].dt.date
+if janela_dias is not None:
+    limite = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None).date() - pd.Timedelta(days=janela_dias)
+    df_kanban = df_kanban[df_kanban["data_dia"] >= limite]
+
+dias_lista = sorted(df_kanban["data_dia"].dropna().unique(), reverse=True)
+
+if not dias_lista:
+    st.info("Nenhum processo fechado nessa janela.")
+else:
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) {
+            flex-wrap: nowrap !important;
+            overflow-x: auto !important;
+            padding-bottom: 12px;
+        }
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div[data-testid="stColumn"],
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(6)) > div[data-testid="column"] {
+            min-width: 260px !important;
+            flex: 0 0 260px !important;
+            width: 260px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(len(dias_lista))
+    for col, dia in zip(cols, dias_lista):
+        with col:
+            st.markdown(f"#### {WEEKDAYS_PT[dia.weekday()]} {dia.strftime('%d/%m')}")
+            bucket = df_kanban[df_kanban["data_dia"] == dia].sort_values("valor_item", ascending=False)
+            st.caption(f"{len(bucket)} item(ns) · R$ {fmt_abrev(bucket['valor_item'].sum())}")
+            for _, row in bucket.iterrows():
+                with st.container(border=True):
+                    cor_sit = "🔴" if row["situacao_item_nome"] == "Fracassado" else "⚪"
+                    st.markdown(f"{cor_sit} **{row['situacao_item_nome']}**")
+                    orgao_label = row["orgao_nome"] or "(órgão sem nome no PNCP)"
+                    st.caption(f"**{orgao_label}** — {row['uf']}")
+                    medida = row["medida_extraida"] or "—"
+                    st.caption(f"{row['categoria'] or '—'} · {medida}")
+                    valor_txt = f"R$ {row['valor_item']:,.0f}" if pd.notna(row["valor_item"]) else "sem valor"
+                    st.caption(valor_txt)
+                    if pd.notna(row["pncp_url"]):
+                        st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)

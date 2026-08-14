@@ -418,6 +418,11 @@ def carregar_itens_fracasso() -> pd.DataFrame:
           AND i.situacao_item_nome IN ('Deserto', 'Fracassado')
           AND (i.valor_unitario_estimado IS NULL OR i.valor_unitario_estimado <= 50000)
           AND (d.valor_total_estimado IS NULL OR d.valor_total_estimado <= 300000000)
+          -- achado 14/ago/2026 (usuário, dimensão de tempo confusa nos gráficos):
+          -- coleta tem resíduo de 2024/2025 (poucos itens, muito espalhado, distorcia
+          -- leitura de UF/categoria) -- trava em 2026 igual pedido, revisar se algum
+          -- dia quiser reabrir histórico completo (aí vira filtro de UI, não trava fixa).
+          AND EXTRACT(YEAR FROM d.data_encerramento_proposta::timestamp) = 2026
         """,
         ENGINE,
     )
