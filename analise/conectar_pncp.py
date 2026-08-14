@@ -409,7 +409,7 @@ def carregar_itens_fracasso() -> pd.DataFrame:
                i.situacao_item_nome, i.valor_unitario_estimado, i.valor_total AS valor_item,
                d.uf_sigla AS uf, d.municipio_nome AS municipio, d.codigo_ibge,
                d.modalidade_nome, d.srp, d.data_abertura_proposta, d.data_encerramento_proposta,
-               d.valor_total_estimado,
+               d.valor_total_estimado, d.link_sistema_origem,
                e.orgao_nome, e.orgao_cnpj, e.ano, e.numero_sequencial
         FROM itens i
         JOIN detalhes d ON d.numero_controle_pncp = i.numero_controle_pncp

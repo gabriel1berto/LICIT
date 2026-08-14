@@ -7,6 +7,7 @@ duplica isso — 1 dono só por helper.
 
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -82,6 +83,40 @@ COR_GRID_DARK = "#3a3a37"
 COR_STATUS_CRITICAL = "#d03b3b"
 COR_STATUS_WARNING  = "#fab219"
 COR_STATUS_GOOD      = "#0ca30c"
+
+
+# Nome legível pros sistemas de pregão mais comuns na base — o dado bruto
+# (link_sistema_origem, vem do PNCP) é o domínio completo, fragmentado em 20+
+# sistemas diferentes (achado 28/jul/2026, radar_abertos.py — movido pra cá
+# 14/ago/2026 quando radar_fracassos.py passou a precisar da mesma lógica,
+# regra "1 dono só por fato"). Fora dessa lista cai no domínio cru; link vazio
+# (~40% dos editais) vira "Não informado", não é bug, é o órgão não
+# preenchendo esse campo no PNCP.
+PORTAIS_CONHECIDOS = {
+    "cnetmobile.estaleiro.serpro.gov.br": "Comprasnet (SERPRO)",
+    "portaldecompraspublicas.com.br": "Portal de Compras Públicas",
+    "bllcompras.com": "BLL Compras",
+    "bnccompras.com": "BNC Compras",
+    "portal.licitanet.com.br": "LicitaNet",
+    "licitanet.com.br": "LicitaNet",
+    "app2.licitardigital.com.br": "Licitar Digital",
+    "licitamaisbrasil.com.br": "Licita Mais Brasil",
+    "app2.ammlicita.org.br": "AMM Licita",
+    "licitacoes-e2.bb.com.br": "Licitações-e (BB)",
+    "pregaobanrisul.com.br": "Pregão Banrisul",
+}
+
+
+def dominio_de(link: str | None) -> str | None:
+    if not link or not link.strip():
+        return None
+    return (urlparse(link.strip()).netloc or link.strip()).lower().removeprefix("www.") or None
+
+
+def portal_de(dominio: str | None) -> str:
+    if not dominio:
+        return "Não informado"
+    return PORTAIS_CONHECIDOS.get(dominio, dominio)
 
 
 def cor_categorica_ordenada(rotulos_em_ordem: list[str]) -> dict[str, str]:

@@ -7,8 +7,6 @@ manual, 1 ferramenta por vez (CLAUDE.md §17.8) — dashboard é público, não 
 pra disparar chamada de API/Claude/Notion sozinho.
 """
 
-from urllib.parse import urlparse
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -18,7 +16,7 @@ from dashboard_common import (
     capag_do_orgao, carregar_base, carregar_capag_estados, carregar_capag_municipios,
     carregar_cotacao_master, carregar_editais_abertos,
     carregar_itens_pneu_editais_abertos, carregar_lat_lon, carregar_ultima_carga_detalhes,
-    cor_capag, fmt_abrev, fundo_transparente,
+    cor_capag, dominio_de as _dominio_de, fmt_abrev, fundo_transparente, portal_de as _portal_de,
 )
 from ui_explicacao import cabecalho_pagina, regra
 
@@ -87,38 +85,6 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "depois de vencer**, não de qualidade do edital em si — nunca decide sozinho se "
         "vale participar."
     )
-
-# Nome legível pros sistemas de pregão mais comuns na base — o dado bruto
-# (link_sistema_origem, vem do PNCP) é o domínio completo, fragmentado em 20+
-# sistemas diferentes (achado 28/jul/2026). Fora dessa lista cai no domínio cru;
-# link vazio (~40% dos editais) vira "Não informado", não é bug, é o órgão não
-# preenchendo esse campo no PNCP.
-_PORTAIS_CONHECIDOS = {
-    "cnetmobile.estaleiro.serpro.gov.br": "Comprasnet (SERPRO)",
-    "portaldecompraspublicas.com.br": "Portal de Compras Públicas",
-    "bllcompras.com": "BLL Compras",
-    "bnccompras.com": "BNC Compras",
-    "portal.licitanet.com.br": "LicitaNet",
-    "licitanet.com.br": "LicitaNet",
-    "app2.licitardigital.com.br": "Licitar Digital",
-    "licitamaisbrasil.com.br": "Licita Mais Brasil",
-    "app2.ammlicita.org.br": "AMM Licita",
-    "licitacoes-e2.bb.com.br": "Licitações-e (BB)",
-    "pregaobanrisul.com.br": "Pregão Banrisul",
-}
-
-
-def _dominio_de(link: str | None) -> str | None:
-    if not link or not link.strip():
-        return None
-    return (urlparse(link.strip()).netloc or link.strip()).lower().removeprefix("www.") or None
-
-
-def _portal_de(dominio: str | None) -> str:
-    if not dominio:
-        return "Não informado"
-    return _PORTAIS_CONHECIDOS.get(dominio, dominio)
-
 
 # Custo pro FORNECEDOR (não pro órgão) de participar — pesquisado individualmente
 # 06/ago/2026 (fonte: site oficial de cada portal + ConLicitação/Effecti), não é

@@ -19,7 +19,8 @@ import plotly.express as px
 import streamlit as st
 
 from dashboard_common import (
-    CORES_CATEGORIA, carregar_itens_fracasso, carregar_ultima_carga_detalhes, fmt_abrev, fundo_transparente,
+    CORES_CATEGORIA, carregar_itens_fracasso, carregar_ultima_carga_detalhes, dominio_de, fmt_abrev,
+    fundo_transparente, portal_de,
 )
 from ui_explicacao import cabecalho_pagina, regra
 
@@ -67,7 +68,16 @@ if itens.empty:
     st.info("Nenhum item de pneu Deserto/Fracassado na base ainda.")
     st.stop()
 
-col_uf, col_cat, col_sit, col_tipo, col_janela = st.columns(5)
+# achado 14/ago/2026 (investigação pedida pelo usuário): portal privado
+# conhecido e sistema .gov.br próprio do órgão falham ~3x mais (8,9%) que
+# domínio não mapeado (3,0%) — "Não informado" (link vazio) só parece
+# dominar porque é ~40% do volume total, não porque falha mais. Mesma lógica
+# de dominio_de/portal_de do radar_abertos.py (movida pra dashboard_common.py
+# 14/ago/2026 quando esta página passou a precisar dela também).
+itens["portal_dominio"] = itens["link_sistema_origem"].apply(dominio_de)
+itens["portal"] = itens["portal_dominio"].apply(portal_de)
+
+col_uf, col_cat, col_sit, col_tipo, col_portal, col_janela = st.columns(6)
 with col_uf:
     uf_sel = st.multiselect("UF", sorted(itens["uf"].dropna().unique()), key="uf_frac")
 with col_cat:
@@ -79,6 +89,12 @@ with col_sit:
     )
 with col_tipo:
     tipo_sel = st.multiselect("Tipo (procedimento)", sorted(itens["tipo"].dropna().unique()), key="tipo_frac")
+with col_portal:
+    portal_sel = st.multiselect(
+        "Portal", sorted(itens["portal"].unique()), key="portal_frac",
+        help="Onde a sessão do pregão roda (link_sistema_origem do PNCP). 'Não informado' = "
+        "órgão não preencheu esse campo (~40% dos casos) — não é sinal de risco por si só.",
+    )
 with col_janela:
     JANELA_OPCOES = {"Últimos 30 dias": 30, "Últimos 60 dias": 60, "Últimos 90 dias": 90, "2026 inteiro": None}
     janela_sel = st.selectbox("Janela", list(JANELA_OPCOES.keys()), index=1, key="janela_frac")
@@ -93,6 +109,8 @@ if sit_sel:
     df = df[df["situacao_item_nome"].isin(sit_sel)]
 if tipo_sel:
     df = df[df["tipo"].isin(tipo_sel)]
+if portal_sel:
+    df = df[df["portal"].isin(portal_sel)]
 if janela_dias is not None:
     _limite = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None).date() - pd.Timedelta(days=janela_dias)
     df = df[df["data_encerramento_proposta"].dt.date >= _limite]
@@ -224,5 +242,6 @@ else:
                     st.caption(f"{row['categoria'] or '—'} · {medida}")
                     valor_txt = f"R$ {row['valor_item']:,.0f}" if pd.notna(row["valor_item"]) else "sem valor"
                     st.caption(valor_txt)
+                    st.caption(f"🔗 {row['portal']}")
                     if pd.notna(row["pncp_url"]):
                         st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)
