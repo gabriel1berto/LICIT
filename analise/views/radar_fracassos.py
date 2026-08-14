@@ -67,7 +67,7 @@ if itens.empty:
     st.info("Nenhum item de pneu Deserto/Fracassado na base ainda.")
     st.stop()
 
-col_uf, col_cat, col_sit, col_tipo = st.columns(4)
+col_uf, col_cat, col_sit, col_tipo, col_janela = st.columns(5)
 with col_uf:
     uf_sel = st.multiselect("UF", sorted(itens["uf"].dropna().unique()), key="uf_frac")
 with col_cat:
@@ -79,6 +79,10 @@ with col_sit:
     )
 with col_tipo:
     tipo_sel = st.multiselect("Tipo (procedimento)", sorted(itens["tipo"].dropna().unique()), key="tipo_frac")
+with col_janela:
+    JANELA_OPCOES = {"Últimos 30 dias": 30, "Últimos 60 dias": 60, "Últimos 90 dias": 90, "2026 inteiro": None}
+    janela_sel = st.selectbox("Janela", list(JANELA_OPCOES.keys()), index=1, key="janela_frac")
+    janela_dias = JANELA_OPCOES[janela_sel]
 
 df = itens.copy()
 if uf_sel:
@@ -89,6 +93,9 @@ if sit_sel:
     df = df[df["situacao_item_nome"].isin(sit_sel)]
 if tipo_sel:
     df = df[df["tipo"].isin(tipo_sel)]
+if janela_dias is not None:
+    _limite = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None).date() - pd.Timedelta(days=janela_dias)
+    df = df[df["data_encerramento_proposta"].dt.date >= _limite]
 
 if df.empty:
     st.warning("Nenhum item bate esses filtros.")
@@ -163,20 +170,16 @@ st.divider()
 # todo dia corrido do intervalo — a janela aqui é maior (meses, 2026 inteiro)
 # e a maioria dos dias não tem processo nenhum; mostrar só dia com dado
 # mantém o Kanban navegável em vez de centenas de coluna vazia.
+#
+# Janela agora é filtro do topo da página (junto de UF/Categoria/Situação/
+# Tipo) — afeta KPI/gráficos/órgãos/Kanban juntos, não só esta seção (pedido
+# usuário 14/ago/2026, antes só filtrava aqui embaixo).
 st.subheader("Dia a dia")
 st.caption("1 coluna por dia em que algum processo fechou Deserto/Fracassado — mais recente primeiro.")
 
 WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
-janela_opcoes = {"Últimos 30 dias": 30, "Últimos 60 dias": 60, "Últimos 90 dias": 90, "2026 inteiro": None}
-janela_sel = st.radio("Janela", list(janela_opcoes.keys()), horizontal=True, index=1, key="janela_kanban")
-janela_dias = janela_opcoes[janela_sel]
-
 df_kanban = df.copy()
 df_kanban["data_dia"] = df_kanban["data_encerramento_proposta"].dt.date
-if janela_dias is not None:
-    limite = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None).date() - pd.Timedelta(days=janela_dias)
-    df_kanban = df_kanban[df_kanban["data_dia"] >= limite]
-
 dias_lista = sorted(df_kanban["data_dia"].dropna().unique(), reverse=True)
 
 if not dias_lista:
