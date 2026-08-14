@@ -122,10 +122,15 @@ st.divider()
 col_g1, col_g2 = st.columns(2)
 with col_g1:
     st.subheader("Valor por UF")
-    por_uf = df.groupby("uf", as_index=False)["valor_item"].sum().sort_values("valor_item", ascending=False)
-    fig_uf = px.bar(por_uf, x="valor_item", y="uf", orientation="h")
-    fig_uf.update_traces(marker_color="#2a78d6")
-    fig_uf.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Valor (R$)", yaxis_title="")
+    # empilhado por categoria (pedido usuário 14/ago/2026) — mesma cor de
+    # CORES_CATEGORIA do gráfico ao lado, reusa identidade em vez de paleta nova.
+    por_uf_cat = df.groupby(["uf", "categoria"], as_index=False)["valor_item"].sum()
+    ordem_uf = (
+        por_uf_cat.groupby("uf")["valor_item"].sum().sort_values(ascending=True).index.tolist()
+    )
+    fig_uf = px.bar(por_uf_cat, x="valor_item", y="uf", orientation="h", color="categoria",
+                     color_discrete_map=CORES_CATEGORIA, category_orders={"uf": ordem_uf})
+    fig_uf.update_layout(xaxis_title="Valor (R$)", yaxis_title="", legend_title_text="")
     fundo_transparente(fig_uf)
     st.plotly_chart(fig_uf, use_container_width=True)
 
