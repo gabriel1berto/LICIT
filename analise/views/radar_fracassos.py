@@ -153,14 +153,22 @@ with col_g1:
     st.plotly_chart(fig_uf, use_container_width=True)
 
 with col_g2:
-    st.subheader("Valor por categoria")
-    por_cat = df.groupby("categoria", as_index=False)["valor_item"].sum().sort_values("valor_item", ascending=False)
-    fig_cat = px.bar(por_cat, x="valor_item", y="categoria", orientation="h", color="categoria",
-                      color_discrete_map=CORES_CATEGORIA)
-    fig_cat.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Valor (R$)",
-                           yaxis_title="", showlegend=False)
-    fundo_transparente(fig_cat)
-    st.plotly_chart(fig_cat, use_container_width=True)
+    st.subheader("Valor por portal")
+    # top 10 + "Outros" — portal não mapeado vira o próprio domínio (1 rótulo
+    # por site), lista inteira sem corte fica ilegível. Ranking, não identidade
+    # fixa tipo categoria, então cor única em vez da paleta categórica.
+    por_portal_full = df.groupby("portal", as_index=False)["valor_item"].sum().sort_values("valor_item", ascending=False)
+    if len(por_portal_full) > 10:
+        top10 = por_portal_full.head(10)
+        outros_valor = por_portal_full["valor_item"].iloc[10:].sum()
+        por_portal = pd.concat([top10, pd.DataFrame([{"portal": "Outros", "valor_item": outros_valor}])])
+    else:
+        por_portal = por_portal_full
+    fig_portal = px.bar(por_portal, x="valor_item", y="portal", orientation="h")
+    fig_portal.update_traces(marker_color="#2a78d6")
+    fig_portal.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Valor (R$)", yaxis_title="")
+    fundo_transparente(fig_portal)
+    st.plotly_chart(fig_portal, use_container_width=True)
 
 st.divider()
 
