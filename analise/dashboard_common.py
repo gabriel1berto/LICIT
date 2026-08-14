@@ -16,7 +16,8 @@ from conectar_pncp import (
     carregar_base_pncp, carregar_capag_estados as _carregar_capag_estados,
     carregar_capag_municipios as _carregar_capag_municipios,
     carregar_editais_abertos as _carregar_editais_abertos,
-    carregar_fornecedores_resultado, carregar_itens_pneu_editais_abertos as _carregar_itens_pneu_editais_abertos,
+    carregar_fornecedores_resultado, carregar_itens_fracasso as _carregar_itens_fracasso,
+    carregar_itens_pneu_editais_abertos as _carregar_itens_pneu_editais_abertos,
     cobertura_por_uf, cobertura_pct, ultima_carga_detalhes as _ultima_carga_detalhes,
 )
 from conectar_cotacao_master import (
@@ -157,6 +158,11 @@ def carregar_cobertura_uf() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def carregar_editais_abertos() -> pd.DataFrame:
     return _carregar_editais_abertos()
+
+
+@st.cache_data(ttl=300)
+def carregar_itens_fracasso() -> pd.DataFrame:
+    return _carregar_itens_fracasso()
 
 
 @st.cache_data(ttl=300)

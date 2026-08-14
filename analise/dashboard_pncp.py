@@ -32,6 +32,7 @@ pagina = st.navigation({
     ],
     "🗂️ Radar de Editais": [
         st.Page("views/radar_abertos.py", title="Editais Abertos", icon="🗂️"),
+        st.Page("views/radar_fracassos.py", title="Desertos & Fracassos", icon="📉"),
     ],
     "💰 Cotação Fornecedor": [
         st.Page("views/cotacao_preco_atual.py", title="Preço Atual", icon="📍"),

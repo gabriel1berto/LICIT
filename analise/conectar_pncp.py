@@ -390,6 +390,63 @@ def carregar_editais_abertos() -> pd.DataFrame:
     return df.sort_values("dias_restantes")
 
 
+def carregar_itens_fracasso() -> pd.DataFrame:
+    """1 linha por item de pneu com situação Deserto ou Fracassado (Anulado/
+    Revogado/Cancelado fora — cancelamento administrativo, não sinal de mercado,
+    mesma exclusão já usada no pipeline market-scan-2026). Radar de Editais →
+    "Desertos & Fracassos": diferente de carregar_editais_abertos() (só editais
+    com proposta ainda aberta), esta cobre o histórico inteiro já resolvido —
+    onde a demanda de pneu não foi atendida, oportunidade pra próxima rodada ou
+    pra contato direto com o órgão.
+
+    Mesmos tetos de sanidade de valor já usados em carregar_base_pncp()
+    (item <=R$50k, processo <=R$300mi) e mesma dedup de retificação (mantém a
+    versão mais recente do processo, igual carregar_editais_abertos — é a
+    única válida pra decidir se ainda vale contato)."""
+    df = pd.read_sql_query(
+        """
+        SELECT i.numero_controle_pncp, i.numero_item, i.descricao, i.categoria,
+               i.situacao_item_nome, i.valor_unitario_estimado, i.valor_total AS valor_item,
+               d.uf_sigla AS uf, d.municipio_nome AS municipio, d.codigo_ibge,
+               d.modalidade_nome, d.srp, d.data_abertura_proposta, d.data_encerramento_proposta,
+               d.valor_total_estimado,
+               e.orgao_nome, e.orgao_cnpj, e.ano, e.numero_sequencial
+        FROM itens i
+        JOIN detalhes d ON d.numero_controle_pncp = i.numero_controle_pncp
+        JOIN editais e ON e.numero_controle_pncp = i.numero_controle_pncp
+        WHERE i.eh_pneu = TRUE
+          AND i.situacao_item_nome IN ('Deserto', 'Fracassado')
+          AND (i.valor_unitario_estimado IS NULL OR i.valor_unitario_estimado <= 50000)
+          AND (d.valor_total_estimado IS NULL OR d.valor_total_estimado <= 300000000)
+        """,
+        ENGINE,
+    )
+    if df.empty:
+        return df
+
+    df = df[~df["numero_controle_pncp"].isin(PROCESSOS_EXCLUIDOS_DADO_RUIM)]
+
+    # mesma dedup de retificação de carregar_editais_abertos() (mantém a versão MAIS
+    # RECENTE do processo — é a que reflete o estado real pra decidir contato agora).
+    df = df.sort_values("numero_controle_pncp")
+    chave_dedup = (
+        df["orgao_cnpj"] + "|" + df["valor_total_estimado"].astype(str) + "|"
+        + df["data_encerramento_proposta"].astype(str)
+    )
+    df = df[~chave_dedup.duplicated(keep="last")]
+
+    df["codigo_ibge"] = pd.to_numeric(df["codigo_ibge"], errors="coerce")
+    df["data_abertura_proposta"] = pd.to_datetime(df["data_abertura_proposta"], errors="coerce", utc=True)
+    df["data_encerramento_proposta"] = pd.to_datetime(df["data_encerramento_proposta"], errors="coerce", utc=True)
+    df["tipo"] = df["modalidade_nome"].apply(_classificar_tipo)
+    df["regime"] = df["srp"].apply(lambda v: "RP" if v else "CD")
+    df["medida_extraida"] = df["descricao"].apply(_extrair_medida)
+    df["pncp_url"] = (
+        "https://pncp.gov.br/app/editais/" + df["orgao_cnpj"] + "/" + df["ano"] + "/" + df["numero_sequencial"]
+    )
+    return df.sort_values("data_encerramento_proposta", ascending=False)
+
+
 def carregar_itens_pneu_editais_abertos(numeros_controle: list[str]) -> pd.DataFrame:
     """1 linha por item de pneu dos editais abertos passados em `numeros_controle`
     (mesmo id retornado por carregar_editais_abertos) — usado pra tabela item x
