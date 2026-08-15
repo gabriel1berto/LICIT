@@ -61,10 +61,13 @@ licit/
 │   │                           reusado pelo cotacao_master/ — ver Anexo Pneu § Ciclo de match
 │   ├── conectar_pncp.py        Queries do schema `public` (mercado PNCP) usadas pelo dashboard —
 │   │                           inclui carregar_editais_abertos() (ver Anexo Pneu § Radar de Editais)
+│   │                           e carregar_itens_fracasso() (ver Anexo Pneu § Desertos & Fracassos)
 │   ├── conectar_cotacao_master.py  Queries do schema `cotacao_fornecedor` (ver Anexo Pneu § Cotação Master)
 │   ├── ui_explicacao.py        Padrão de explicabilidade local (16/jul/2026) — cabecalho_pagina()
 │   │                           (pergunta+fonte no topo) e regra() (expander "Regra e cálculo")
-│   ├── dashboard_common.py     Estilo/cores/loaders compartilhados entre as páginas do dashboard
+│   ├── dashboard_common.py     Estilo/cores/loaders compartilhados entre as páginas do dashboard —
+│   │                           inclui dominio_de()/portal_de()/PORTAIS_CONHECIDOS (movidos de
+│   │                           radar_abertos.py 14/ago/2026, agora 2 páginas usam)
 │   ├── .streamlit/config.toml  Tema escuro (16/jul/2026) — ver "Tema e paleta" abaixo
 │   ├── dashboard_pncp.py       Entrypoint do dashboard (Streamlit multi-page — `st.navigation`)
 │   ├── views/                  Conteúdo de cada página do dashboard (Mercado PNCP + Radar de Editais +
@@ -267,6 +270,45 @@ Falso negativo (101 itens — maior achado da rodada):
 Ângulos que não acharam nada (robustez confirmada): NCM (campo nunca populado nesta
 base), `criterio_julgamento_nome`.
 
+**Rodada 04/ago/2026 (achado via análise manual de edital, não auditoria em massa) — 1
+bug corrigido, 6/167.376 itens mudariam (0,004% da base), `recomputar_filtro.py`
+rodado — `eh_pneu=TRUE` foi de 48.193 → 48.187 (-6):**
+
+Falso positivo (6 itens, todos a mesma frase): "Câmara Conservação"/"Câmara de
+conservação de vacinas" (geladeira/frigobar de vacina, equipamento de saúde) batia
+`RE_CAMARA_GENERICA` + alguma dimensão do equipamento (ex: voltagem "127/220") batia
+`RE_MEDIDA_AMPLA` por coincidência — mesma classe do bug já corrigido de "câmara
+refrigerada/frigorífica" (ver Anexo, achado anterior), só que com a palavra
+"conservação" em vez de "refrigerada/fria/frigorífica", não coberta pela exclusão
+`RE_CAMARA_NAO_PNEU` até então. Achado ao analisar manualmente um card do Kanban
+"Radar de Editais" (Prefeitura de Fazenda Rio Grande-PR, emenda parlamentar de saúde,
+72 itens — nenhum pneu de verdade, o card só existia por causa desse item 9).
+
+**Rodada 14/ago/2026 (validação cruzada com extração nacional independente,
+market-scan-2026 — bulk download sem keyword, ver projeto irmão) — 1 bug achado,
+NÃO corrigido (decisão explícita do usuário, "a margem de erro está ótima, não
+vamos mexer"):**
+
+Cruzados 88 processos distintos de pneu Deserto/Fracassado (achados pelo
+market-scan bulk, sem depender de busca por termo) contra a tabela `editais`
+do LICIT (achada via `q=Pneu`) — **87/88 (98,9%) apareceram**, cobertura de
+Fase 1 muito melhor do que o risco documentado em §17.15/16 do CLAUDE.md fazia
+temer. O 1 que faltou é ruído real (item de carreta agrícola, não pneu).
+
+Dos 87, **70 tinham item marcado `eh_pneu=TRUE`; 17 não.** Auditoria manual dos
+17: 16 são ruído genuíno (corretamente excluídos), mas **1 é falso negativo
+real** — processo `18017400000175-1-000021/2026` (MG), 6 itens de pneu
+genuínos somando **R$275.858** (Caminhão 275/80-22.5 R$70k×2, Agrícola/OTR
+17.5-25 R$55k×2, Passeio 215/65-16C R$19k, 205/65-16 R$6,6k), todos com
+prefixo `"Item 4. Pneu 275 / 80 - 22.5 RADIAL"`. `RE_PREFIXO_IGNORAR` cobre
+`"Lote N -"` e `"N -"` bare mas **não cobre `"Item N."` (palavra "Item" por
+extenso + ponto)** — mesmo padrão bateu em `14662467000101-1-000016/2026`
+(valor R$0, irrelevante, mas confirma que não é caso isolado).
+
+Fix seria 1 linha (`item\s+\d+[.\-–]\s*` como nova alternativa no regex) — **não
+aplicado**, usuário decidiu manter o filtro como está. Registrado aqui pra não
+redescobrir do zero numa auditoria futura.
+
 ## Radar de Editais (Kanban, 16/jul/2026, colunas por dia desde 11/ago/2026)
 
 Página "🗂️ Radar de Editais" no dashboard — Kanban só-leitura dos editais com item de pneu
@@ -307,6 +349,51 @@ manual no Notion).
   secundário num edital genérico maior).
 - Badge 🔁 de comprador recorrente — mesmo órgão com 2+ editais de pneu abertos ao mesmo
   tempo, sinal de relacionamento a cultivar, não só oportunidade pontual.
+
+## Desertos & Fracassos (Kanban dia a dia, 14/ago/2026)
+
+Página "📉 Desertos & Fracassos" no dashboard — irmã do "Radar de Editais", mesmo grupo
+de navegação, mas **retrospectiva**: processos que já FECHARAM sem sucesso (`Deserto`
+= ninguém apareceu; `Fracassado` = apareceu, foi desclassificado), não os que ainda
+estão com proposta aberta. Objetivo: achar padrão de recompra e decidir contato direto
+com o órgão (ver memória do assistente, plano "ocupar o gap" — ainda não registrado
+formalmente, sessão de 14/ago/2026).
+
+Fonte: `conectar_pncp.carregar_itens_fracasso()` (nova, mesma base `itens`/`detalhes`/
+`editais` do Radar de Editais — nenhuma coleta nova precisou ser feita, o dado já
+estava sendo gravado, só não tinha view pra ele) — `situacao_item_nome IN
+('Deserto','Fracassado')`, `eh_pneu=TRUE`, mesmo teto de sanidade de valor do resto
+do dashboard.
+
+**Ano travado em 2026 na query** (pedido usuário, 14/ago/2026) — coleta tem resíduo
+de itens 2024/2025 que distorcia a leitura de UF/categoria; virar filtro de UI em vez
+de trava fixa é evolução futura, não feita ainda.
+
+Filtro do topo (UF/Categoria/Situação/Tipo/Portal/Janela) afeta **KPI + gráficos +
+"Quem compra de novo" + Kanban juntos** — não é filtro parcial. "Janela" (30/60/90
+dias ou 2026 inteiro) começou existindo só dentro do Kanban, virou filtro global no
+mesmo dia a pedido do usuário.
+
+**Portal — `dominio_de`/`portal_de`/`PORTAIS_CONHECIDOS` movidos de
+`radar_abertos.py` pra `dashboard_common.py`** (14/ago/2026, regra "1 dono só") já
+que as 2 páginas passaram a usar. Achado que motivou a coluna: **portal privado
+conhecido (BLL, Licitanet, etc) e sistema `.gov.br` próprio do órgão falham ~3x mais
+(8,9% cada) que domínio não mapeado (3,0%)** — "Não informado" (link vazio no PNCP,
+~40% do volume) só parece dominar a lista porque é o maior balde em volume bruto, não
+porque falha mais. Gráfico "Valor por portal" (top 10 + "Outros") substituiu "Valor
+por categoria" no lado direito — "Valor por UF" virou empilhado por categoria no
+mesmo dia (mesma paleta `CORES_CATEGORIA` do gráfico de categoria original).
+
+**Motivo da desclassificação não está na página** — PNCP não estrutura esse campo
+(`resultados` só grava fornecedor homologado, sem coluna pra proposta rejeitada);
+só sai lendo ata/documento manualmente (mesmo trabalho do `analisa_edital.py`).
+Decisão explícita de escopo: cobrir só tipo+valor+geografia+portal+recompra por
+ora, motivo fica pra depois, só nos processos de maior valor.
+
+Kanban dia a dia (retrospectivo, dia de ENCERRAMENTO, não de abertura) reusa o
+mesmo padrão CSS de scroll horizontal do Radar de Editais, mas só mostra dia com
+processo de verdade (janela típica é meses, não dias — mostrar todo dia corrido
+geraria centenas de coluna vazia).
 
 ## Cotação Master (coleta diária de preço, independente de edital)
 
