@@ -1,21 +1,29 @@
 #!/usr/bin/env python3
-"""Página — Radar de Peças Automotivas: lista simples de editais abertos com
-óleo lubrificante/graxa/filtro de ar/bateria automotiva/filtro de
-combustível/amortecedor/filtro de óleo. Vertical de exploração de mercado
-(17-19/ago/2026, mesmo estágio do Oncológico) — separado dos dados de pneu,
-schema próprio (`pecas_automotivas`), sem cotação de fornecedor ainda.
+"""Página — Radar de Peças Automotivas: Kanban por dia de encerramento, mesma
+estrutura visual da página "Editais Abertos" do pneu (`radar_abertos.py`) —
+achado 19/ago/2026, pedido explícito do usuário pra igualar o formato.
 
-Fase 1 só (busca de edital, sem detalhe/item) — tabela simples, sem Kanban
-por dia/mapa/CAPAG (isso existe no Radar de pneu/onco, decisão deliberada de
-manter esta página enxuta, ver conversa 19/ago/2026).
+Diferenças deliberadas (fase 1 só, sem detalhe/item, sem cotação de
+fornecedor — mesmo estágio do Oncológico hoje):
+  - Sem mapa/CAPAG (precisam de codigo_ibge, que só existe na fase 2 —
+    decisão de não construir fase 2 ainda, ver conversa 19/ago/2026).
+  - Sem funil "meu preço x preço histórico" (sem cotação de distribuidor
+    pra peça automotiva, mesma exceção que radar_abertos_onco.py já tem).
+  - "Encerra em" usa `data_fim_vigencia` do search API (fase 1), não
+    `data_encerramento_proposta` (fase 2) — proxy razoável, não confirmado
+    item a item.
 
 Só leitura — nenhum botão aqui dispara coletor/análise/Notion.
 """
 
+import pandas as pd
 import streamlit as st
 
 from conectar_pecas import carregar_editais_abertos_pecas
+from dashboard_common import COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING
 from ui_explicacao import cabecalho_pagina, regra
+
+WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
 # Auditoria 19/ago/2026 (amostra real dos 1.726 editais coletados até então):
 # % de resultado com sinal explícito de contexto automotivo (veículo/automotivo/carro/
@@ -116,27 +124,127 @@ if editais.empty:
 
 st.caption(f"{len(editais)} edital(is) aberto(s), nesse filtro.")
 
-editais = editais.sort_values("dias_restantes")
-tabela = editais.copy()
-tabela["Órgão"] = tabela["orgao_nome"]
-tabela["Local"] = tabela["municipio"] + "/" + tabela["uf"]
-tabela["Modalidade"] = tabela["modalidade_licitacao_nome"]
-tabela["Termo"] = tabela["termo_busca"]
-tabela["Confiança"] = tabela["confianca"].map(_ICONE_CONFIANCA) + " " + tabela["confianca"]
-tabela["Valor estimado"] = tabela["valor_global"]
-tabela["Encerra em (dias)"] = tabela["dias_restantes"].round(1)
-tabela["Link"] = tabela["pncp_url"]
+# Mesmos 3 buckets de urgência do radar de pneu/onco — cor reservada, sempre com
+# ícone+label junto (skill dataviz, "status color nunca sozinha").
+BUCKETS = [
+    ("🔴", "Urgente", COR_STATUS_CRITICAL, lambda d: d <= 2),
+    ("🟡", "Esta semana", COR_STATUS_WARNING, lambda d: 2 < d <= 7),
+    ("🟢", "Depois", COR_STATUS_GOOD, lambda d: d > 7),
+]
 
-st.dataframe(
-    tabela[["Órgão", "Local", "Modalidade", "Termo", "Confiança", "Valor estimado", "Encerra em (dias)", "Link"]],
-    use_container_width=True, hide_index=True,
-    column_config={
-        "Valor estimado": st.column_config.NumberColumn(format="R$ %.2f"),
-        "Link": st.column_config.LinkColumn(display_text="Abrir no PNCP"),
-    },
+
+def _icone_cor_dia(dias_faltam: float) -> tuple:
+    for icone, _, cor, cond in BUCKETS:
+        if cond(dias_faltam):
+            return icone, cor
+    return "❔", COR_STATUS_GOOD
+
+
+contagem_orgao = editais["orgao_nome"].value_counts()
+
+# Kanban por dia de encerramento (mesmo padrão de radar_abertos.py do pneu, 1 coluna
+# por dia corrido entre hoje e o edital mais distante, mesmo dia sem edital nenhum).
+#
+# ⚠️ Achado 19/ago/2026 (bug real pego em teste): `data_fim_vigencia` é o único campo
+# de prazo que a fase 1 (search API) tem, mas pra Inexigibilidade/Credenciamento/SRP
+# ele às vezes é VIGÊNCIA DE ATA (anos), não fim de proposta — 1 edital de Candoi/PR
+# tinha data_fim_vigencia em 2029 (1046 dias), o que gerava >1000 colunas e travava o
+# navegador. Teto de segurança: só vira coluna de dia se faltar ≤45 dias; o resto cai
+# numa coluna "📦 Vigência longa" no final, sem quebrar o layout. Resolver de verdade
+# (saber se é prazo de proposta real) exigiria fase 2 — mesma decisão já registrada
+# no topo do arquivo.
+TETO_DIAS_KANBAN = 45
+editais["data_dia"] = editais["data_fim_vigencia"].dt.date
+editais_kanban = editais[editais["dias_restantes"] <= TETO_DIAS_KANBAN]
+editais_vigencia_longa = editais[editais["dias_restantes"] > TETO_DIAS_KANBAN]
+
+_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None).date()
+if editais_kanban.empty:
+    dias_lista = []
+else:
+    dias_lista = list(pd.date_range(_hoje, editais_kanban["data_dia"].max()).date)
+
+st.markdown(
+    """
+    <style>
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-child(20)) {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        padding-bottom: 12px;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-child(20)) > div[data-testid="stColumn"],
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-child(20)) > div[data-testid="column"] {
+        min-width: 260px !important;
+        flex: 0 0 260px !important;
+        width: 260px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
+def _render_card(row: pd.Series, cor_dia: str) -> None:
+    with st.container(border=True):
+        st.markdown(
+            f'<div style="height:4px;background:{cor_dia};border-radius:2px;margin-bottom:10px;"></div>',
+            unsafe_allow_html=True,
+        )
+        st.metric("Encerra em", f"{row['dias_restantes']:.1f} dia(s)")
+        orgao_label = row["orgao_nome"]
+        if contagem_orgao.get(row["orgao_nome"], 0) > 1:
+            orgao_label += " 🔁"
+        st.caption(f"**{orgao_label}** — {row['municipio']}/{row['uf']}")
+        icone_conf = _ICONE_CONFIANCA[row["confianca"]]
+        st.caption(f"{icone_conf} Confiança {row['confianca']} · termo: {row['termo_busca']}")
+        valor = row["valor_global"]
+        if pd.isna(valor) or valor == 0:
+            st.caption("Sem valor estimado (órgão não informou no PNCP)")
+        else:
+            st.caption(f"R$ {valor:,.2f}".replace(",", "_").replace(".", ",").replace("_", "."))
+        st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)
+        with st.expander("Detalhes"):
+            objeto = row["titulo"] or row["descricao"] or "(sem objeto descrito)"
+            st.caption(str(objeto)[:200] + ("…" if len(str(objeto)) > 200 else ""))
+            st.caption(f"{row['modalidade_licitacao_nome'] or '—'}")
+            if contagem_orgao.get(row["orgao_nome"], 0) > 1:
+                st.caption(
+                    f"🔁 Esse órgão tem {contagem_orgao[row['orgao_nome']]} editais de peça "
+                    "automotiva abertos agora, nesse filtro."
+                )
+
+
+n_cols = len(dias_lista) + (1 if not editais_vigencia_longa.empty else 0)
+cols = st.columns(max(n_cols, 1))
+for col, dia in zip(cols, dias_lista):
+    with col:
+        dias_faltam = (dia - _hoje).days
+        icone_dia, cor_dia = _icone_cor_dia(dias_faltam)
+        st.markdown(f"#### {icone_dia} {WEEKDAYS_PT[dia.weekday()]} {dia.strftime('%d/%m')}")
+        if dias_faltam == 0:
+            st.caption("Encerra hoje")
+        elif dias_faltam == 1:
+            st.caption("Falta 1 dia")
+        else:
+            st.caption(f"Faltam {dias_faltam} dias")
+        bucket = editais_kanban[editais_kanban["data_dia"] == dia].sort_values("dias_restantes")
+        if bucket.empty:
+            st.caption("Nenhum edital nesse dia.")
+            continue
+        for _, row in bucket.iterrows():
+            _render_card(row, cor_dia)
+
+if not editais_vigencia_longa.empty:
+    with cols[-1]:
+        st.markdown(f"#### 📦 Vigência longa (>{TETO_DIAS_KANBAN}d)")
+        st.caption(
+            "`data_fim_vigencia` aqui é provável vigência de ata/registro de preço, não fim de "
+            "proposta real — confirmar no link antes de assumir prazo."
+        )
+        for _, row in editais_vigencia_longa.sort_values("dias_restantes").iterrows():
+            _render_card(row, COR_STATUS_GOOD)
+
+st.divider()
 st.caption(
     "Análise de edital individual não roda pra peças automotivas ainda — este radar é só "
-    "monitoramento/triagem de mercado."
+    "monitoramento/triagem de mercado. Nenhuma escrita acontece a partir deste dashboard."
 )
