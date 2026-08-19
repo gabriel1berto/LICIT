@@ -23,7 +23,12 @@ Cada vertical tem seu pipeline de mercado próprio (`analise/` pra pneu, `analis
 licit/
 ├── pncp_radar.py            [Pneu] Radar diário — busca edital novo no PNCP, envia email. Resiliente a queda:
 │                            ciclo de 10 tentativas, se falhar avisa por email (1x) e repete a cada
-│                            30min até conseguir (job do GH Actions com budget de tempo maior pra isso)
+│                            30min até conseguir (job do GH Actions com budget de tempo maior pra isso).
+│                            Achado 17/ago/2026: "EXCLUSIVO LOCAL OU REGIONAL" (participação restrita a
+│                            ME/EPP de um município/microrregião, via lei local) não existe em nenhum campo
+│                            da API do PNCP — só na capa do PDF do Aviso/Edital. Radar baixa 1-2 docs (só
+│                            dos candidatos já confirmados como pneu real, não de todo hit "pneu") e faz
+│                            match por regex — sinaliza no email (🌎), não descarta o edital sozinho.
 ├── analisa_edital.py        [Pneu] Camada 1. Baixa edital via API PNCP (pdf/docx/txt/html), Claude extrai JSON → card Notion.
 │                            Trava (ExtracaoInsuficiente) se o documento não puder ser lido com confiança —
 │                            nunca analisa sem base documental real. Usa valorTotalEstimado oficial do PNCP
@@ -71,7 +76,16 @@ licit/
 │   ├── .streamlit/config.toml  Tema escuro (16/jul/2026) — ver "Tema e paleta" abaixo
 │   ├── dashboard_pncp.py       Entrypoint do dashboard (Streamlit multi-page — `st.navigation`)
 │   ├── views/                  Conteúdo de cada página do dashboard (Mercado PNCP + Radar de Editais +
-│   │                           Cotação Fornecedor)
+│   │                           Cotação Fornecedor + Peças Automotivas)
+│   ├── coletor_pecas.py        [Peças Automotivas, 17-19/ago/2026] Fase 1 só — busca óleo lubrificante/
+│   │                           graxa/filtro (ar/óleo/combustível)/bateria automotiva/amortecedor na API
+│   │                           de busca, grava em schema `pecas_automotivas` (isolado de `public`/
+│   │                           `oncologia`). Exploração de mercado, mesmo estágio do Onco — sem fase 2
+│   │                           (detalhe/item) nem cotação de fornecedor, decisão deliberada de ficar
+│   │                           enxuto (ver conversa 19/ago/2026).
+│   ├── conectar_pecas.py       Query única (carregar_editais_abertos_pecas) — "aberto" decidido por
+│   │                           situacao_nome + data_fim_vigencia (dataFimVigencia do search API),
+│   │                           sem precisar de fase 2 pra isso.
 │   ├── recomputar_filtro.py    Reaplica filtro_pneu.py sem reraspar (quando o filtro muda)
 │   ├── migrar_para_supabase.py Migração one-shot SQLite → Postgres (já rodada, mantida por histórico)
 │   ├── schema_supabase.sql     Schema das 6 tabelas (schema `public`, mercado PNCP)
@@ -477,6 +491,8 @@ pré-sinaliza suspeita de produto reforçado/comercial antes da revisão (zero c
 
 - **Modelo mestre:** [pasta no Drive](https://drive.google.com/drive/folders/1Nf10IsY2Gzpf_1WXWuKBC0B58vAbnuXX) — nunca editar direto, sempre duplicar (`copy_file`) antes de preencher. Só tem o banner (linhas 1-2) — os 4 blocos (Bransales/Cantu/GP/Green) e as fórmulas são construídos do zero pelo script a cada rodada, altura dinâmica (não mais 12 linhas fixas por bloco). Colunas de entrada A-L (Item/Produto/Modelo/Especificação Técnica/Critérios/Distribuidor/Marca/Link/Observação/Preço UN/Ref. Edital/Qtde) + coluna Vencedor (fórmula, compara os 4 blocos).
 - `python preencher_planilha_precificacao.py <spreadsheet_id> <analise.json> --bransales X --cantu X --gp X --green X`
+- **`--sheet <nome_aba>`** (default `Página1`, achado 17/ago/2026): permite precificar mais de 1 edital na mesma planilha, 1 aba por edital — duplicar a aba `Página1` dentro da própria planilha (`worksheet.duplicate(new_sheet_name=...)`) antes de rodar com `--sheet <nome_aba>`. Pasta do mês (`Ago`/`Jul`/...) organiza 1 subpasta por edital, convenção `DD/MÊS | ÓRGÃO - DD/MÊS(sessão)`.
+- **Fallback de busca no `bransales_scraper.py` (achado/corrigido 17/ago/2026):** a rota de filtro (`/pneus/Largura-X,Altura-Y,Aro-Z/`, inclusive variantes com só 1 filtro tipo `/pneus/Aro-14/`) pode levar 403 do WAF (GoCache) — rotas estáticas (`/pneus/`, `/camaras/`, home) e a própria busca (`/busca?q=`) continuam liberadas, então é rate-limit seletivo por rota "cara", não bloqueio de domínio nem falta de estoque. `scrape_listing()` agora detecta o 403 e cai sozinho pro fallback `build_url_busca()` (mesmo parser, só troca a URL) — não precisa mais de intervenção manual quando isso acontecer de novo.
 - Detalhe completo: `CLAUDE.md` §15.5
 
 ## Ciclo de Aprendizado
