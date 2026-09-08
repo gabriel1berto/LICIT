@@ -145,14 +145,14 @@ else:
         mapa_df["longitude"].max() - mapa_df["longitude"].min(),
         0.5,
     ))
-    fig_mapa = px.scatter_mapbox(
+    fig_mapa = px.scatter_map(
         mapa_df, lat="latitude", lon="longitude", color="bucket_label",
         category_orders={"bucket_label": list(CORES_BUCKET)},
         color_discrete_map=CORES_BUCKET,
         hover_name="orgao_nome",
         hover_data={"municipio": True, "uf": True, "dias_restantes": ":.1f", "latitude": False, "longitude": False},
         center={"lat": mapa_df["latitude"].mean(), "lon": mapa_df["longitude"].mean()},
-        zoom=zoom, mapbox_style="carto-darkmatter",
+        zoom=zoom, map_style="carto-darkmatter",
     )
     fig_mapa.update_traces(marker=dict(size=12))
     fig_mapa.update_layout(height=500, margin=dict(l=0, r=0, t=0, b=0), legend_title_text="")

@@ -367,10 +367,10 @@ else:
         lat_span = muni["latitude"].max() - muni["latitude"].min()
         lon_span = muni["longitude"].max() - muni["longitude"].min()
         zoom = max(3.0, 8.5 - 1.4 * max(lat_span, lon_span, 0.5))
-        fig3 = px.density_mapbox(
+        fig3 = px.density_map(
             muni, lat="latitude", lon="longitude", z="valor_total", radius=25,
             center={"lat": muni["latitude"].mean(), "lon": muni["longitude"].mean()},
-            zoom=zoom, mapbox_style="carto-darkmatter", color_continuous_scale="Blues",
+            zoom=zoom, map_style="carto-darkmatter", color_continuous_scale="Blues",
             labels={"valor_total": "Valor total (R$)"},
         )
         fig3.update_layout(height=600, margin=dict(l=0, r=0, t=0, b=0))
