@@ -89,7 +89,7 @@ licit/
 │   ├── recomputar_filtro.py    Reaplica filtro_pneu.py sem reraspar (quando o filtro muda)
 │   ├── migrar_para_supabase.py Migração one-shot SQLite → Postgres (já rodada, mantida por histórico)
 │   ├── schema_supabase.sql     Schema das 6 tabelas (schema `public`, mercado PNCP)
-│   └── requirements.txt        Deps desse pipeline (psycopg2, streamlit, plotly, curl_cffi...)
+│   └── requirements.txt        Deps desse pipeline (psycopg2+psycopg v3, streamlit, plotly, curl_cffi...)
 │
 ├── analise_onco/            [Onco] Pipeline de mercado para medicamentos oncológicos (espelha analise/,
 │   │                        iniciado 23/jul/2026 — vitrine de capacidade, não vende oncológico
@@ -202,6 +202,16 @@ DATABASE_URL              # Postgres/Supabase, pooler transaction mode
 Radar (`requirements_radar.txt`) e pipelines de mercado (`analise/requirements.txt`,
 `analise_onco/requirements.txt`) têm dependências separadas de propósito — o radar não
 precisa puxar `psycopg2`/`streamlit`.
+
+**Bug corrigido 01/out/2026 — dash "Radar de Editais" (`/radar_abertos`) fora do ar:**
+Streamlit Cloud passou a rodar o app em Python 3.14 (bleeding edge — `runtime.txt` pedindo
+3.12 não é mais respeitado pela plataforma, pin ficou obsoleto), e `psycopg2-binary` ainda
+não tem wheel pra 3.14 — `create_engine(DATABASE_URL)` em `conectar_pncp.py` quebrava com
+`ModuleNotFoundError` na resolução do dialect do SQLAlchemy. Fix: adicionado `psycopg[binary]`
+(driver v3, com wheel pra 3.14) ao `analise/requirements.txt`, junto do `psycopg2-binary`
+já existente — não depende de mexer no painel do Streamlit Cloud. Mesmo requirements.txt
+cobre todas as páginas do dashboard (`conectar_pncp.py`, `conectar_pecas.py`,
+`conectar_cotacao_master.py` usam o mesmo padrão `create_engine`).
 
 `cotacao_master.yml` (GitHub Actions) roda em nuvem, não lê `.env` — precisa dos mesmos pares
 acima (`BRANSALES_EMAIL/PASSWORD`, `CANTU_EMAIL/PASSWORD`, `GREEN_EMAIL/PASSWORD`,
