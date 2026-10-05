@@ -7,4 +7,4 @@ psycopg2-binary>=2.9
 psycopg[binary]>=3.2
 sqlalchemy>=2.0
 python-dotenv>=1.0
-# 05/out/2026: linha tocada pra forcar reinicio do app no Streamlit Cloud (modulo conectar_pecas ficou em cache)
+# 05/out/2026: linha tocada pra forcar reinicio do app no Streamlit Cloud (modulo conectar_pecas ficou em cache) (2x)

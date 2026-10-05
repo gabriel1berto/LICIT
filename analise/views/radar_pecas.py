@@ -56,7 +56,10 @@ st.warning(
     "(19/ago/2026) achou só 6-11% dos resultados com sinal explícito de veículo/automotivo/frota "
     "no texto; o restante é majoritariamente insumo genérico (máquina industrial, hidráulico, "
     "agrícola, naval) que usa o mesmo termo. **Filtro de ar/óleo/combustível** ficam em risco "
-    "médio (52-57%). Só **Bateria automotiva** e **Amortecedor** têm sinal forte (67-94%). "
+    "médio (52-57%). **Bateria automotiva** tem sinal forte (94%). **Amortecedor** parecia forte "
+    "(67%), mas em 05/out/2026, lendo o objeto dos 140 editais abertos, só 19% eram automotivos "
+    "(o resto: móvel planejado, piso de playground, hospitalar). Por isso a página agora filtra "
+    "pelo **objeto** do edital (chave abaixo) em vez de confiar no termo. "
     "Coluna **Confiança** na tabela abaixo marca isso por termo — não é confirmação item a item, "
     "só probabilidade baseada no termo de busca."
 )
@@ -72,16 +75,38 @@ with regra("ℹ️ Por que esse risco existe (e por que não dá pra resolver s�
     )
 
 editais = carregar_editais_abertos_pecas()
+_total_base = len(editais)
+if not editais.empty:
+    so_automotivo = st.toggle(
+        "Só editais com objeto automotivo",
+        value=True,
+        key="so_auto_radar_pecas",
+        help="A busca do PNCP acha o termo dentro dos itens e anexos, não no objeto — "
+        "\"amortecedor\" traz móvel planejado, piso de playground, cama hospitalar. Ligado, "
+        "mostra só edital cujo objeto fala de veículo/frota E de peça ou manutenção. "
+        "É heurística por texto do objeto, não leitura item a item.",
+    )
+    if so_automotivo:
+        editais = editais[editais["tipo_objeto"].notna()]
+    st.caption(
+        f"{len(editais)} de {_total_base} editais abertos na base"
+        + (" têm objeto automotivo." if so_automotivo else " (sem filtro de objeto).")
+    )
 if editais.empty:
     st.info("Nenhum edital aberto com esses termos no momento.")
     st.stop()
 
-col_uf, col_mod, col_termo = st.columns(3)
+col_uf, col_mod, col_tipo, col_termo = st.columns(4)
 with col_uf:
     uf_sel = st.multiselect("UF", sorted(editais["uf"].dropna().unique()), key="uf_radar_pecas")
 with col_mod:
     mod_sel = st.multiselect(
         "Modalidade", sorted(editais["modalidade_licitacao_nome"].dropna().unique()), key="mod_radar_pecas"
+    )
+with col_tipo:
+    tipo_sel = st.multiselect(
+        "Tipo (pelo objeto)", sorted(editais["tipo_objeto"].dropna().unique()), key="tipo_radar_pecas",
+        help="Peças = compra de peça/insumo. Serviço com peças = oficina que fornece a peça.",
     )
 with col_termo:
     termos_disp = sorted({t.strip() for ts in editais["termo_busca"].dropna() for t in ts.split(",")})
@@ -113,6 +138,8 @@ if uf_sel:
     editais = editais[editais["uf"].isin(uf_sel)]
 if mod_sel:
     editais = editais[editais["modalidade_licitacao_nome"].isin(mod_sel)]
+if tipo_sel:
+    editais = editais[editais["tipo_objeto"].isin(tipo_sel)]
 if termo_sel:
     editais = editais[editais["termo_busca"].apply(lambda s: any(t in s for t in termo_sel))]
 if conf_sel:
@@ -204,6 +231,7 @@ def _render_card(row: pd.Series, cor_dia: str) -> None:
             orgao_label += " 🔁"
         st.caption(f"**{orgao_label}** — {row['municipio']}/{row['uf']}")
         icone_conf = _ICONE_CONFIANCA[row["confianca"]]
+        st.caption(f"**{row['tipo_objeto'] or 'Objeto sem sinal automotivo'}**")
         st.caption(f"{icone_conf} Confiança {row['confianca']} · termo: {row['termo_busca']}")
         valor = row["valor_global"]
         if pd.isna(valor) or valor == 0:
@@ -266,7 +294,8 @@ st.caption(
 st.dataframe(
     editais[[
         "data_fim_vigencia", "dias_restantes", "uf", "municipio", "orgao_nome",
-        "modalidade_licitacao_nome", "termo_busca", "confianca", "valor_global", "pncp_url",
+        "modalidade_licitacao_nome", "tipo_objeto", "descricao", "termo_busca", "confianca",
+        "valor_global", "pncp_url",
     ]],
     hide_index=True,
     use_container_width=True,
@@ -277,6 +306,8 @@ st.dataframe(
         "municipio": "Município",
         "orgao_nome": "Órgão",
         "modalidade_licitacao_nome": "Modalidade",
+        "tipo_objeto": "Tipo",
+        "descricao": st.column_config.TextColumn("Objeto", width="large"),
         "termo_busca": "Termo",
         "confianca": "Confiança",
         "valor_global": st.column_config.NumberColumn("Valor estimado (R$)", format="%.2f"),

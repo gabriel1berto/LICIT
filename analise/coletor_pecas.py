@@ -110,7 +110,8 @@ def upsert_edital(cur, item: dict, termo: str) -> None:
             data_atualizacao_pncp = EXCLUDED.data_atualizacao_pncp,
             data_fim_vigencia = EXCLUDED.data_fim_vigencia,
             situacao_nome = EXCLUDED.situacao_nome,
-            cancelado = EXCLUDED.cancelado
+            cancelado = EXCLUDED.cancelado,
+            valor_global = EXCLUDED.valor_global
     """, (
         item.get("numero_controle_pncp"), item.get("uf"),
         item.get("modalidade_licitacao_id"), item.get("modalidade_licitacao_nome"),
@@ -119,7 +120,9 @@ def upsert_edital(cur, item: dict, termo: str) -> None:
         item.get("ano"), item.get("numero_sequencial"),
         item.get("data_publicacao_pncp"), item.get("data_atualizacao_pncp"),
         item.get("data_fim_vigencia"), item.get("situacao_nome"), item.get("cancelado"),
-        item.get("valor_global"), item.get("tem_resultado"),
+        # valor_global vem nulo no search API pra edital; o estimado está em
+        # valor_total_estimado (achado 05/out/2026 — cards mostravam "sem valor").
+        item.get("valor_global") or item.get("valor_total_estimado"), item.get("tem_resultado"),
         item.get("item_url"), termo, datetime.now(timezone.utc).isoformat(),
     ))
 

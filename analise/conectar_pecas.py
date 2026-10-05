@@ -13,6 +13,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
+from filtro_pecas import classificar_objeto_pecas
+
 load_dotenv()
 
 ENGINE = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
@@ -45,6 +47,11 @@ def carregar_editais_abertos_pecas() -> pd.DataFrame:
     ).fillna(pd.Timestamp("2200-01-01"))
     agora_brt = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None)
     df["dias_restantes"] = (df["data_fim_vigencia"] - agora_brt).dt.total_seconds() / 86400
+    # Tipo pelo OBJETO do edital, não pelo termo de busca (ver filtro_pecas.py) — None
+    # quando o objeto não tem sinal de peça automotiva (móvel planejado, hospitalar etc.).
+    df["tipo_objeto"] = (df["titulo"].fillna("") + " " + df["descricao"].fillna("")).apply(
+        classificar_objeto_pecas
+    )
     df["pncp_url"] = (
         "https://pncp.gov.br/app/editais/" + df["orgao_cnpj"] + "/" + df["ano"] + "/" + df["numero_sequencial"]
     )

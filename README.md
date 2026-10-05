@@ -86,6 +86,9 @@ licit/
 │   │                           `status=recebendo_proposta` (até 25 páginas/termo) e roda todo dia
 │   │                           via `.github/workflows/pecas_coletor_editais.yml` — antes era rodada
 │   │                           manual única e o radar ficou vazio por base velha.
+│   ├── filtro_pecas.py         Classifica o OBJETO do edital (Peças / Serviço com peças / nenhum) — a busca
+│   │                           do PNCP casa o termo nos itens, então "amortecedor" trazia móvel planejado.
+│   │                           Radar filtra por isso desde 05/out/2026. Testes: test_filtro_pecas.py.
 │   ├── conectar_pecas.py       Query única (carregar_editais_abertos_pecas) — "aberto" decidido por
 │   │                           situacao_nome + data_fim_vigencia (dataFimVigencia do search API),
 │   │                           sem precisar de fase 2 pra isso.
