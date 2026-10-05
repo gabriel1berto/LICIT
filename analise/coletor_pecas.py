@@ -17,6 +17,8 @@ Vocabulário (definido pelo usuário, 17/ago/2026): óleo lubrificante, graxa,
 filtro de ar, bateria automotiva, filtro de combustível, amortecedor,
 filtro de óleo.
 
+Coleta diária agendada em .github/workflows/pecas_coletor_editais.yml (05/out/2026).
+
 Uso:
     python coletor_pecas.py                     # roda todos os termos
     python coletor_pecas.py --termo "Bateria automotiva"  # só 1 termo (teste)
@@ -44,7 +46,13 @@ HEADERS = {
 }
 
 TAM_PAGINA = 50
-MAX_PAGINAS_POR_TERMO = 6
+# Só edital recebendo proposta agora (05/out/2026): o radar só mostra edital aberto, e
+# com "todos" + teto de 300 registros/termo a rodada pegava ~12 abertos de um histórico
+# de 6-50 mil por termo. Filtrando na busca, o teto abaixo cobre o termo inteiro (maior
+# termo tinha 809 abertos em 05/out/2026; 25 páginas = 1.250). Edital já gravado que
+# encerra sai do radar sozinho pelo data_fim_vigencia, sem precisar ser recoletado.
+STATUS_BUSCA = "recebendo_proposta"
+MAX_PAGINAS_POR_TERMO = 25
 PAUSA_ENTRE_PAGINAS = 2.5
 PAUSA_ENTRE_TERMOS = 1.5
 MAX_TENTATIVAS = 4
@@ -70,7 +78,7 @@ def buscar_pagina(termo: str, pagina: int) -> dict:
         "q": termo,
         "pagina": pagina,
         "tam_pagina": TAM_PAGINA,
-        "status": "todos",
+        "status": STATUS_BUSCA,
         "tipos_documento": "edital",
     }
     espera = 8.0

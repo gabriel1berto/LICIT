@@ -82,7 +82,10 @@ licit/
 │   │                           de busca, grava em schema `pecas_automotivas` (isolado de `public`/
 │   │                           `oncologia`). Exploração de mercado, mesmo estágio do Onco — sem fase 2
 │   │                           (detalhe/item) nem cotação de fornecedor, decisão deliberada de ficar
-│   │                           enxuto (ver conversa 19/ago/2026).
+│   │                           enxuto (ver conversa 19/ago/2026). Desde 05/out/2026 busca só
+│   │                           `status=recebendo_proposta` (até 25 páginas/termo) e roda todo dia
+│   │                           via `.github/workflows/pecas_coletor_editais.yml` — antes era rodada
+│   │                           manual única e o radar ficou vazio por base velha.
 │   ├── conectar_pecas.py       Query única (carregar_editais_abertos_pecas) — "aberto" decidido por
 │   │                           situacao_nome + data_fim_vigencia (dataFimVigencia do search API),
 │   │                           sem precisar de fase 2 pra isso.

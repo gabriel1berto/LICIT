@@ -35,7 +35,14 @@ def carregar_editais_abertos_pecas() -> pd.DataFrame:
     if df.empty:
         return df
 
-    df["data_fim_vigencia"] = pd.to_datetime(df["data_fim_vigencia"])
+    # PNCP devolve o campo ora com segundos ("...T23:59:59"), ora sem ("...T09:00") —
+    # sem format explícito o pandas infere pelo 1º valor e quebra no outro (achado 05/out/2026).
+    # Ano digitado errado pelo órgão (ex: "5026-08-14") estoura o limite do Timestamp — a
+    # query já garante data futura e não nula, então NaT aqui é só esse caso: joga pra uma
+    # data distante válida, que cai na coluna "Vigência longa" do radar em vez de sumir.
+    df["data_fim_vigencia"] = pd.to_datetime(
+        df["data_fim_vigencia"], format="ISO8601", errors="coerce"
+    ).fillna(pd.Timestamp("2200-01-01"))
     agora_brt = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None)
     df["dias_restantes"] = (df["data_fim_vigencia"] - agora_brt).dt.total_seconds() / 86400
     df["pncp_url"] = (

@@ -154,6 +154,15 @@ contagem_orgao = editais["orgao_nome"].value_counts()
 # (saber se é prazo de proposta real) exigiria fase 2 — mesma decisão já registrada
 # no topo do arquivo.
 TETO_DIAS_KANBAN = 45
+# ⚠️ Achado 05/out/2026 (teste em browser real): com a coleta diária de editais abertos a
+# base passou de ~12 pra ~1.600 editais, e 1 card por edital congelava o renderer (cada
+# card são ~8 elementos Streamlit). Cada coluna mostra só os N mais relevantes (maior
+# confiança, depois maior valor); a lista completa fica na tabela no fim da página.
+MAX_CARDS_POR_COLUNA = 8
+editais["_ordem_conf"] = editais["confianca"].map(_ORDEM_CONFIANCA)
+editais = editais.sort_values(
+    ["_ordem_conf", "valor_global", "dias_restantes"], ascending=[False, False, True], na_position="last"
+)
 editais["data_dia"] = editais["data_fim_vigencia"].dt.date
 editais_kanban = editais[editais["dias_restantes"] <= TETO_DIAS_KANBAN]
 editais_vigencia_longa = editais[editais["dias_restantes"] > TETO_DIAS_KANBAN]
@@ -226,11 +235,13 @@ for col, dia in zip(cols, dias_lista):
             st.caption("Falta 1 dia")
         else:
             st.caption(f"Faltam {dias_faltam} dias")
-        bucket = editais_kanban[editais_kanban["data_dia"] == dia].sort_values("dias_restantes")
+        bucket = editais_kanban[editais_kanban["data_dia"] == dia]
         if bucket.empty:
             st.caption("Nenhum edital nesse dia.")
             continue
-        for _, row in bucket.iterrows():
+        if len(bucket) > MAX_CARDS_POR_COLUNA:
+            st.caption(f"Mostrando {MAX_CARDS_POR_COLUNA} de {len(bucket)} — resto na tabela abaixo.")
+        for _, row in bucket.head(MAX_CARDS_POR_COLUNA).iterrows():
             _render_card(row, cor_dia)
 
 if not editais_vigencia_longa.empty:
@@ -240,8 +251,38 @@ if not editais_vigencia_longa.empty:
             "`data_fim_vigencia` aqui é provável vigência de ata/registro de preço, não fim de "
             "proposta real — confirmar no link antes de assumir prazo."
         )
-        for _, row in editais_vigencia_longa.sort_values("dias_restantes").iterrows():
+        if len(editais_vigencia_longa) > MAX_CARDS_POR_COLUNA:
+            st.caption(
+                f"Mostrando {MAX_CARDS_POR_COLUNA} de {len(editais_vigencia_longa)} — resto na tabela abaixo."
+            )
+        for _, row in editais_vigencia_longa.head(MAX_CARDS_POR_COLUNA).iterrows():
             _render_card(row, COR_STATUS_GOOD)
+
+st.markdown("#### Lista completa")
+st.caption(
+    "Todos os editais do filtro acima, ordenados por confiança e valor. O Kanban mostra só os "
+    f"{MAX_CARDS_POR_COLUNA} primeiros de cada dia."
+)
+st.dataframe(
+    editais[[
+        "data_fim_vigencia", "dias_restantes", "uf", "municipio", "orgao_nome",
+        "modalidade_licitacao_nome", "termo_busca", "confianca", "valor_global", "pncp_url",
+    ]],
+    hide_index=True,
+    use_container_width=True,
+    column_config={
+        "data_fim_vigencia": st.column_config.DatetimeColumn("Encerra em", format="DD/MM/YYYY HH:mm"),
+        "dias_restantes": st.column_config.NumberColumn("Dias", format="%.1f"),
+        "uf": "UF",
+        "municipio": "Município",
+        "orgao_nome": "Órgão",
+        "modalidade_licitacao_nome": "Modalidade",
+        "termo_busca": "Termo",
+        "confianca": "Confiança",
+        "valor_global": st.column_config.NumberColumn("Valor estimado (R$)", format="%.2f"),
+        "pncp_url": st.column_config.LinkColumn("PNCP", display_text="Abrir"),
+    },
+)
 
 st.divider()
 st.caption(
