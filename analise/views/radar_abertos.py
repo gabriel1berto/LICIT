@@ -12,7 +12,7 @@ import plotly.express as px
 import streamlit as st
 
 from dashboard_common import (
-    COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING,
+    COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING, ORDEM_REGIOES, REGIAO_POR_UF,
     capag_do_orgao, carregar_base, carregar_capag_estados, carregar_capag_municipios,
     carregar_cotacao_master, carregar_editais_abertos,
     carregar_itens_pneu_editais_abertos, carregar_lat_lon, carregar_ultima_carga_detalhes,
@@ -125,9 +125,20 @@ editais["portal_dominio"] = editais["link_sistema_origem"].apply(_dominio_de)
 editais["portal"] = editais["portal_dominio"].apply(_portal_de)
 editais["custo_fornecedor"] = editais["portal_dominio"].apply(_custo_fornecedor)
 
-col_uf, col_mod, col_cat, col_regime, col_portal, col_custo = st.columns(6)
+editais["regiao"] = editais["uf"].map(REGIAO_POR_UF)
+
+col_reg, col_uf, col_mod, col_cat, col_regime, col_portal, col_custo = st.columns(7)
+with col_reg:
+    regioes_disp = [r for r in ORDEM_REGIOES if r in set(editais["regiao"].dropna())]
+    reg_sel = st.multiselect("Região", regioes_disp, key="regiao_radar")
 with col_uf:
-    uf_sel = st.multiselect("UF", sorted(editais["uf"].dropna().unique()), key="uf_radar")
+    # UF lista só as UFs das regiões escolhidas (todas, se nenhuma região escolhida)
+    ufs_disp = editais.loc[editais["regiao"].isin(reg_sel), "uf"] if reg_sel else editais["uf"]
+    ufs_disp = sorted(ufs_disp.dropna().unique())
+    # UF já escolhida que saiu das opções (trocou de região) quebra o multiselect — descarta antes
+    if "uf_radar" in st.session_state:
+        st.session_state["uf_radar"] = [u for u in st.session_state["uf_radar"] if u in ufs_disp]
+    uf_sel = st.multiselect("UF", ufs_disp, key="uf_radar")
 with col_mod:
     mod_sel = st.multiselect(
         "Modalidade", sorted(editais["modalidade_licitacao_nome"].dropna().unique()), key="mod_radar"
@@ -155,6 +166,8 @@ with col_custo:
         "confirmando cobrança ou gratuidade — não custa nada checar antes de descartar.",
     )
 
+if reg_sel:
+    editais = editais[editais["regiao"].isin(reg_sel)]
 if uf_sel:
     editais = editais[editais["uf"].isin(uf_sel)]
 if mod_sel:
