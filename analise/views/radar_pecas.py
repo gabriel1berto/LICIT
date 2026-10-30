@@ -20,7 +20,9 @@ import pandas as pd
 import streamlit as st
 
 from conectar_pecas import carregar_editais_abertos_pecas
-from dashboard_common import COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING
+from dashboard_common import (
+    COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING, ORDEM_REGIOES, REGIAO_POR_UF,
+)
 from ui_explicacao import cabecalho_pagina, regra
 
 WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -96,9 +98,20 @@ if editais.empty:
     st.info("Nenhum edital aberto com esses termos no momento.")
     st.stop()
 
-col_uf, col_mod, col_tipo, col_termo = st.columns(4)
+editais["regiao"] = editais["uf"].map(REGIAO_POR_UF)
+
+col_reg, col_uf, col_mod, col_tipo, col_termo = st.columns(5)
+with col_reg:
+    regioes_disp = [r for r in ORDEM_REGIOES if r in set(editais["regiao"].dropna())]
+    reg_sel = st.multiselect("Região", regioes_disp, key="regiao_radar_pecas")
 with col_uf:
-    uf_sel = st.multiselect("UF", sorted(editais["uf"].dropna().unique()), key="uf_radar_pecas")
+    # UF lista só as UFs das regiões escolhidas (todas, se nenhuma região escolhida)
+    ufs_disp = editais.loc[editais["regiao"].isin(reg_sel), "uf"] if reg_sel else editais["uf"]
+    ufs_disp = sorted(ufs_disp.dropna().unique())
+    # UF já escolhida que saiu das opções (trocou de região) quebra o multiselect — descarta antes
+    if "uf_radar_pecas" in st.session_state:
+        st.session_state["uf_radar_pecas"] = [u for u in st.session_state["uf_radar_pecas"] if u in ufs_disp]
+    uf_sel = st.multiselect("UF", ufs_disp, key="uf_radar_pecas")
 with col_mod:
     mod_sel = st.multiselect(
         "Modalidade", sorted(editais["modalidade_licitacao_nome"].dropna().unique()), key="mod_radar_pecas"
@@ -134,6 +147,8 @@ with col_conf:
         "confirmação item a item.",
     )
 
+if reg_sel:
+    editais = editais[editais["regiao"].isin(reg_sel)]
 if uf_sel:
     editais = editais[editais["uf"].isin(uf_sel)]
 if mod_sel:
@@ -293,7 +308,7 @@ st.caption(
 )
 st.dataframe(
     editais[[
-        "data_fim_vigencia", "dias_restantes", "uf", "municipio", "orgao_nome",
+        "data_fim_vigencia", "dias_restantes", "regiao", "uf", "municipio", "orgao_nome",
         "modalidade_licitacao_nome", "tipo_objeto", "descricao", "termo_busca", "confianca",
         "valor_global", "pncp_url",
     ]],
@@ -302,6 +317,7 @@ st.dataframe(
     column_config={
         "data_fim_vigencia": st.column_config.DatetimeColumn("Encerra em", format="DD/MM/YYYY HH:mm"),
         "dias_restantes": st.column_config.NumberColumn("Dias", format="%.1f"),
+        "regiao": "Região",
         "uf": "UF",
         "municipio": "Município",
         "orgao_nome": "Órgão",

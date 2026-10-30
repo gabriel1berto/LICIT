@@ -85,6 +85,20 @@ COR_STATUS_WARNING  = "#fab219"
 COR_STATUS_GOOD      = "#0ca30c"
 
 
+# Região oficial do IBGE por UF — filtro "Região" dos radares (29/out/2026,
+# pedido do usuário no Radar de Peças). Fica aqui pra radar_abertos/onco
+# reusarem a mesma tabela se ganharem o filtro também.
+REGIAO_POR_UF = {
+    "AC": "Norte", "AP": "Norte", "AM": "Norte", "PA": "Norte", "RO": "Norte", "RR": "Norte", "TO": "Norte",
+    "AL": "Nordeste", "BA": "Nordeste", "CE": "Nordeste", "MA": "Nordeste", "PB": "Nordeste",
+    "PE": "Nordeste", "PI": "Nordeste", "RN": "Nordeste", "SE": "Nordeste",
+    "DF": "Centro-Oeste", "GO": "Centro-Oeste", "MT": "Centro-Oeste", "MS": "Centro-Oeste",
+    "ES": "Sudeste", "MG": "Sudeste", "RJ": "Sudeste", "SP": "Sudeste",
+    "PR": "Sul", "RS": "Sul", "SC": "Sul",
+}
+ORDEM_REGIOES = ["Norte", "Nordeste", "Centro-Oeste", "Sudeste", "Sul"]
+
+
 # Nome legível pros sistemas de pregão mais comuns na base — o dado bruto
 # (link_sistema_origem, vem do PNCP) é o domínio completo, fragmentado em 20+
 # sistemas diferentes (achado 28/jul/2026, radar_abertos.py — movido pra cá
