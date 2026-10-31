@@ -62,7 +62,17 @@ Cada vertical tem seu próprio pipeline de mercado (coletor fase 1/fase 2 + filt
 
 ### Projeto (C:\Users\ghumb\code\licit\.claude\skills\)
 
-Só `analise-de-edital` é versionada. As 46 skills de terceiros abaixo estão no `.gitignore` (decisão 31/out/2026, repo público), então clone novo não as traz: precisam ser reinstaladas à mão.
+Só `analise-de-edital`, específica do LICIT e versionada.
+
+**A criar (aprovadas para o projeto):**
+- `edital-analyzer` — análise estruturada de edital/TR com critérios de risco
+- `competitive-intelligence` — profiling de concorrente licitante (adaptada de versão B2B SaaS)
+
+### Globais (C:\Users\ghumb\.claude\skills\)
+
+Disponíveis em todos os projetos, fora do repo: máquina nova precisa reinstalá-las à mão. `.claude/skills/*` segue no `.gitignore` (decisão 31/out/2026, repo público), pra evitar commit acidental de skill de terceiro. Abaixo só as relevantes pro LICIT; a pasta tem outras.
+
+**Posicionamento/ICP:** `icp-identification`, `launch-positioning-builder`, `voice-of-customer-synthesizer`
 
 **founder-playbook (15 skills):**
 `100m-leads`, `100m-offers`, `blue-ocean-strategy`, `crossing-the-chasm`, `diagnose`, `four-steps`, `influence`, `lean-startup`, `made-to-stick`, `mom-test`, `monetizing-innovation`, `obviously-awesome`, `spin-selling`, `storybrand`, `traction`
@@ -77,19 +87,11 @@ Só `analise-de-edital` é versionada. As 46 skills de terceiros abaixo estão n
 
 Relevante pra qualquer pipeline `analise/`/`analise_onco/` (mercado PNCP): `query-validation` (revisar os SQL/regex de filtro), `time-series-analysis` (sazonalidade), `data-quality-audit` (achar bug de classificação tipo os das rodadas de auto-aperfeiçoamento), `visualization-builder` (complementa a skill `dataviz` global).
 
-**A criar (aprovadas para o projeto):**
-- `edital-analyzer` — análise estruturada de edital/TR com critérios de risco
-- `competitive-intelligence` — profiling de concorrente licitante (adaptada de versão B2B SaaS)
-
-### Globais (C:\Users\ghumb\.claude\skills\)
-
-`icp-identification`, `launch-positioning-builder`, `voice-of-customer-synthesizer`
-
 ---
 
 ## 6. Como Usar as Skills do founder-playbook
 
-Origem do conjunto não registrada: nenhum arquivo das skills cita URL do repo (verificado 31/out/2026).
+Skills globais (ver §5). Origem do conjunto não registrada: nenhum arquivo das skills cita URL do repo (verificado 31/out/2026).
 
 ```bash
 # Diagnóstico geral (entry point recomendado)
