@@ -9,3 +9,7 @@ dados/*/*.csv
 analise/pncp_raw.db
 dados_capag/
 *.log
+
+# Skills de terceiros (mantém só a skill própria)
+.claude/skills/*
+!.claude/skills/analise-de-edital/
