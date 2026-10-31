@@ -57,13 +57,40 @@ Anthropic). Reuse todo o resto do módulo, que é puro Python/HTTP sem custo:
    - Todo campo do JSON vem do texto dos documentos (Edital+TR+anexos), nunca
      só de METADADOS PNCP/ITENS API — esses só cross-checam ou preenchem dado
      puramente administrativo (CNPJ, UASG, número do processo).
-   - `itens_api` já vem com descrição completa por item (specs embutidas) —
-     normalmente basta parsear esse campo pra tabela de item, sem precisar
-     casar 1 a 1 com o texto do TR pra cada item.
+   - `itens_api` traz descrição por item, mas **não é fonte confiável sozinha**
+     (achado 04/ago/2026, edital Votuporanga-SP: `itens_api` deu medida
+     "90/90x18" pro item 18 — o Termo de Referência, documento oficial,
+     dizia "90/90 R-21"; e 13 dos 18 itens ficaram com `obs` vazio porque a
+     descrição da API não trazia a especificação técnica que só existia no
+     TR). **Pra TODO edital, sem exceção — não só quando existe um doc
+     separado chamado "Termo de Referência"** (achado 04/ago/2026, rodada
+     completa: MG e BA tinham a especificação técnica por item dentro do
+     próprio Edital único, sem TR separado, e também ficaram genéricas na
+     1ª passada) **é obrigatório, item por item: grep/Read do texto
+     completo do(s) documento(s) pela medida/número do item, ler o
+     parágrafo/bloco ao redor, e só então decidir o que escrever.**
+     Documento oficial vence `itens_api` em qualquer divergência (medida,
+     spec, o que for). Só é aceitável não achar nada além do genérico
+     (`specs_comuns`) depois de ter procurado de verdade — nunca por não
+     ter procurado. Checklist rápido antes de fechar a Camada 1: se metade
+     ou mais dos itens ficou com specs vazias/genéricas, isso é sinal de
+     busca rasa, não de edital pobre em detalhe — voltar e procurar de
+     novo antes de aceitar.
+   - **Critério técnico vira 4 campos estruturados por item, nunca 1 `obs`
+     livre** (schema `itens[]` em `analisa_edital.py`, achado 04/ago/2026):
+     `construcao` (Radial/Diagonal/Reforçado M+S/etc), `ic_iv` (índice de
+     carga e/ou velocidade, como está no documento), `lonas` (só a
+     quantidade, ex: "12 lonas" — vazio se o tipo de pneu não usa essa
+     métrica), `outros` (marca de referência, norma ABNT/INMETRO
+     específica, veículo/placa associado, sulco, ruído, aderência, DOT,
+     ENCE — tudo que não coube nos 3 campos anteriores). Tabela PRODUTOS
+     no Notion (`build_blocks`) já usa essas 4 colunas em vez de "Obs".
    - `prazo_entrega`/`prazo_pagamento`: nunca "conforme edital/TR" — se não
      achou, `grep`/`Read` de novo procurando termos como "prazo de entrega",
      "dias úteis", "empenho", "nota fiscal", "liquidação" antes de desistir.
      Histórico mostra que "não localizado" foi errado 2 vezes seguidas.
+   - **TR (Termo de Referência) vence `itens_api` em divergência de medida/spec
+     por item** — ver correção 04/ago/2026 logo abaixo, mesmo bloco de regras.
    - Bloco `arsenal.*` sempre com `"fonte"` = trecho literal + nome do arquivo,
      nunca inferido.
    - Se o texto citar item além do que `itens_api` retornou (ou vice-versa),

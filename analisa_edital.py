@@ -340,8 +340,18 @@ API do PNCP (pode ser lote de outra secretaria/processo — verificar antes de c
 - Medidas de pneu SEMPRE no formato "NNN/NN RNN" (ex: "175/70 R14", "205/75 R16C"). Nunca use traço no lugar de barra.
 - prazo_entrega e prazo_pagamento: copie o texto exato do documento (ex: "30 dias após recebimento do empenho"). \
 Nunca retorne "conforme TR", "conforme edital" ou null — se não encontrar, procure mais.
-- obs do item: use apenas para especificações relevantes (ex: "Nylon, 8 lonas", "AT 50%", "com câmara"). \
-Deixe vazio se não houver informação adicional relevante.
+- CRITÉRIO TÉCNICO POR ITEM (achado 04/ago/2026: análise anterior deixava isso genérico/vazio em vários \
+editais reais, mesmo quando o documento tinha o dado — nunca mais aceitar isso): pra CADA item, procure no \
+texto completo do documento (Edital + TR + anexos) o trecho que descreve aquele item especificamente — \
+normalmente é uma tabela/bloco por item com construção, índice de carga/velocidade, lonas, marca de \
+referência, norma técnica. Preencha 4 campos separados, nunca um "obs" único:\
+  - "construcao": tipo de construção/carcaça (ex: "Radial", "Diagonal", "Radial reforçado M+S").\
+  - "ic_iv": índice de carga e/ou velocidade juntos, como aparecem no documento (ex: "Ic98 H", "110 (1.060kg) / H (210km/h)").\
+  - "lonas": quantidade de lonas, só o dado (ex: "12 lonas", "8 lonas"). Vazio se o item não for desse tipo (ex: pneu de passeio raramente tem lona especificada).\
+  - "outros": tudo mais relevante que não caiba nos 3 campos acima — marca de referência, norma ABNT/INMETRO específica, veículo/placa associado, sulco mínimo, ruído, aderência, DOT, ENCE, etc.\
+Os 4 campos vazios ao mesmo tempo só é aceitável se você já tiver procurado o número/medida do item no texto \
+inteiro do documento e confirmado que não há nada além do que já está em "specs_comuns" — nunca deixar vazio \
+por não ter procurado.
 - Câmara: "Com" se o item incluir câmara de ar, "Sem" caso contrário. Atenção a itens que listam câmara junto ao pneu.
 - produto: classifica o TIPO do item, sempre um destes valores exatos — "Pneu", "Câmara de ar", "Protetor", "Roda", "Outro". \
 Câmara de ar avulsa (não vem junto de pneu no mesmo item) é "Câmara de ar", não "Pneu". Roda/aro/disco de liga leve é "Roda". \
@@ -414,7 +424,10 @@ PROMPT_ESTRUTURA = """\
       "qtde": 0,
       "valor_unit": "R$ 000,00",
       "valor_total": "R$ 00.000,00",
-      "obs": ""
+      "construcao": "",
+      "ic_iv": "",
+      "lonas": "",
+      "outros": ""
     }
   ],
   "entrega_local": "Endereço completo de entrega",
@@ -766,12 +779,14 @@ def build_blocks(a: dict, doc_blocks: list | None = None) -> list:
     rows_itens = [
         [i["numero"], i.get("catmat", ""), i.get("produto", ""), i["medida"],
          i.get("camara", "—"), i["qtde"],
-         i.get("valor_unit", ""), i.get("valor_total", ""), i.get("obs", "")]
+         i.get("valor_unit", ""), i.get("valor_total", ""),
+         i.get("construcao", ""), i.get("ic_iv", ""), i.get("lonas", ""), i.get("outros", "")]
         for i in itens
-    ] + [["TOTAL", "", "", "", "", qtde_total, "", c["valor_total"], ""]]
+    ] + [["TOTAL", "", "", "", "", qtde_total, "", c["valor_total"], "", "", "", ""]]
 
     bl.append(b_table(
-        ["Item", "CATMAT", "Produto", "Medida", "Câmara", "Qtde", "Valor UN", "Valor Total", "Obs"],
+        ["Item", "CATMAT", "Produto", "Medida", "Câmara", "Qtde", "Valor UN", "Valor Total",
+         "Construção", "IC / IV", "Qtde de Lonas", "Outros"],
         rows_itens
     ))
     if a.get("entrega_local"):
