@@ -60,7 +60,9 @@ Cada vertical tem seu próprio pipeline de mercado (coletor fase 1/fase 2 + filt
 
 ## 5. Skills Instaladas
 
-### Projeto (C:\Users\ghumb\code\licit\.agents\skills\)
+### Projeto (C:\Users\ghumb\code\licit\.claude\skills\)
+
+Só `analise-de-edital` é versionada. As 46 skills de terceiros abaixo estão no `.gitignore` (decisão 31/out/2026, repo público), então clone novo não as traz: precisam ser reinstaladas à mão.
 
 **founder-playbook (15 skills):**
 `100m-leads`, `100m-offers`, `blue-ocean-strategy`, `crossing-the-chasm`, `diagnose`, `four-steps`, `influence`, `lean-startup`, `made-to-stick`, `mom-test`, `monetizing-innovation`, `obviously-awesome`, `spin-selling`, `storybrand`, `traction`
@@ -86,6 +88,8 @@ Relevante pra qualquer pipeline `analise/`/`analise_onco/` (mercado PNCP): `quer
 ---
 
 ## 6. Como Usar as Skills do founder-playbook
+
+Origem do conjunto não registrada: nenhum arquivo das skills cita URL do repo (verificado 31/out/2026).
 
 ```bash
 # Diagnóstico geral (entry point recomendado)
@@ -122,7 +126,7 @@ comportamento do assistente (mesmo dono/seção das demais), não fato de negóc
 6. Ao detectar novo edital relevante: apresentar tabela de breakdown (itens, valores, risco) antes de propor ação
 7. **`analisa_edital.py` nunca pode alucinar (regra travada em código, 09/jul/2026, vertical Pneu):** todo documento do edital deve ser aberto e lido independente do formato (pdf/docx/txt/html/fallback best-effort — nunca pular arquivo em silêncio). Se a extração ficar abaixo de `LIMIAR_CHARS_CONFIAVEIS` (500 chars confiáveis), o processo levanta `ExtracaoInsuficiente` e **para antes de chamar Claude ou escrever no Notion** — nunca gerar análise sem base documental real. Não relaxar esse limiar nem contornar a trava sem pedido explícito. **Mesma regra vale pro `cabecalho.valor_total`:** nunca confiar em texto livre do documento (já variou entre chamadas pro mesmo edital) — usar `valorTotalEstimado` da API do PNCP via `api/consulta/v1` (não `api/pncp/v1`, que retorna esse campo sempre `None`) quando disponível. Divergência vs soma dos itens vira alerta bloqueante no card, nunca é resolvida escolhendo um número sozinho (ver `validar_valor_total()`).
 8. **Testar mudança nesse pipeline só manualmente, 1 ferramenta por vez** — usuário decidiu (09/jul/2026) não automatizar o fluxo completo (buscar edital → card → análise → precificação) ainda. Rodar uma etapa, parar, esperar feedback antes de encadear a próxima.
-9. **Formato do card de análise (com coluna Produto + docs anexados) é padrão aprovado (09/jul/2026, vertical Pneu)** — não redesenhar sem pedido explícito novo. Estrutura fixa: ANÁLISE DE EDITAL (com callout "🧭 PRÓXIMO PASSO" sinalizando evoluir_parecer_juridico, 15/jul/2026) → DOCUMENTOS USADOS NA ANÁLISE → HABILITAÇÃO → PRODUTOS (com coluna Produto) → PONTOS-CHAVE → LEILÃO → DOCUMENTOS DA PROPOSTA → PARECER JURÍDICO (⚖️, Camada 2, só existe se `parecer_juridico.py` rodou — seção aditiva, própria, não redesenha as anteriores). Mudanças futuras devem ser aditivas/corretivas (bug), não redesign.
+9. **Formato do card de análise (com coluna Produto + docs anexados) é padrão aprovado (09/jul/2026, vertical Pneu)** — não redesenhar sem pedido explícito novo. Estrutura fixa: ANÁLISE DE EDITAL (com callout "🧭 PRÓXIMO PASSO" sinalizando evoluir_parecer_juridico, 15/jul/2026) → DOCUMENTOS USADOS NA ANÁLISE → HABILITAÇÃO → PRODUTOS (com coluna Produto) → PONTOS-CHAVE → LEILÃO → DOCUMENTOS DA PROPOSTA → PARECER JURÍDICO (⚖️, Camada 2, só existe se `parecer_juridico.py` rodou — seção aditiva, própria, não redesenha as anteriores). Mudanças futuras devem ser aditivas/corretivas (bug), não redesign. **Mudança deliberada no padrão (registrada 31/out/2026):** tabela PRODUTOS passou de 9 para 12 colunas, com `Obs` substituída por Construção, IC / IV, Qtde de Lonas e Outros (`construcao`/`ic_iv`/`lonas`/`outros`, schema `itens[]` + `build_blocks`). Teste manual com 1 edital real ainda pendente (regra 8).
 10. **Ciclo de Aprendizado segue processo fixo de 6 passos** (ver Anexo A §15.6) — sempre mostrar rascunho e esperar confirmação antes de escrever no Notion.
 11. **Manter README.md, este arquivo e a descrição das ferramentas no Notion sincronizados com o código** — toda vez que um bug for corrigido ou uma feature mudar comportamento, atualizar a documentação relevante no mesmo momento, não depois. Motivo: usuário já foi pego de surpresa por ferramenta com bug que "voltou" — documentação desatualizada é o mesmo risco.
 12. **Arquitetura "1 dono só por fato" (fixada 09/jul/2026):** cada informação vive em exatamente 1 lugar canônico — `README.md` (setup/estrutura/scripts), `CLAUDE.md` (regras operacionais, negócio, processo), memória do assistente (feedback/decisão, só ponteiro pros dois acima quando o fato já existe ali) e Notion (estado vivo de cada processo/edital). Nunca copiar o mesmo fato em 2 lugares — se precisar citar, linkar/referenciar. A trava real que sustenta isso: toda memória LICIT tem uma entrada dizendo pra sempre ler este arquivo primeiro (ver memória `feedback_licit_sempre_ler_claudemd`), já que CLAUDE.md não é carregado automaticamente fora do repo. Política completa documentada no Notion (página "Arquitetura de Documentação — LICIT").
