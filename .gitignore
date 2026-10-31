@@ -13,3 +13,10 @@ dados_capag/
 # Skills de terceiros (mantém só a skill própria)
 .claude/skills/*
 !.claude/skills/analise-de-edital/
+
+# Dado comercial e arquivos de debug (repo público)
+_*.md
+lista_negociacao_*.csv
+tabela_medida_estado_qtd_criterio.csv
+debug_*
+cotacao_master/debug_*
