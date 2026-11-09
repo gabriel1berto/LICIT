@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Página — Mercado Oncológico: Fornecedores e Preço (concentração, desconto e ticket por classe farmacológica).
-Espelha analise/views/mercado_fornecedores.py."""
+Espelhava analise/views/mercado_fornecedores.py (página do pneu removida 09/nov/2026)."""
 
 import plotly.express as px
 import streamlit as st

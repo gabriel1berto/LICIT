@@ -32,7 +32,6 @@ pagina = st.navigation({
         st.Page("views/mercado_analise.py", title="Análise de mercado", icon="🎯", default=True),
         st.Page("views/mercado_produto.py", title="Produto", icon="📦"),
         st.Page("views/mercado_sazonalidade.py", title="Sazonalidade", icon="📅"),
-        st.Page("views/mercado_fornecedores.py", title="Fornecedores e Preço", icon="🏭"),
     ],
     "🗂️ Radar de Editais": [
         st.Page("views/radar_abertos.py", title="Editais Abertos", icon="🗂️"),
