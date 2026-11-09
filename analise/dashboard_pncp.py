@@ -8,9 +8,9 @@ dashboard_pncp.py — Entrypoint do dashboard (Streamlit multi-page nativo).
   - "Radar de Editais": Kanban só-leitura dos editais com pneu ainda com
     proposta aberta — triagem operacional, não análise histórica. Análise
     (Camada 1, analisa_edital.py) continua manual, fora do dashboard.
-  - "Cotação Fornecedor": preço direto cotado nos nossos 4 distribuidor
-    cadastrados (schema cotacao_fornecedor) — sem os filtros PNCP, que não
-    fazem sentido aqui.
+  - "Radar de Fornecedor" (09/nov/2026, substitui as 3 páginas de "Cotação
+    Fornecedor"): mapa dos fornecedores catalogados no Notion por UF + fila de
+    prioridade de contato. Snapshot estático (assets/radar_fornecedor.html).
   - "Peças Automotivas" (17-19/ago/2026): exploração de mercado separada de
     pneu (schema `pecas_automotivas`, óleo/graxa/filtro/bateria/amortecedor)
     — só radar de editais abertos, fase 1 (sem detalhe/item), sem cotação de
@@ -38,10 +38,8 @@ pagina = st.navigation({
         st.Page("views/radar_abertos.py", title="Editais Abertos", icon="🗂️"),
         st.Page("views/radar_fracassos.py", title="Desertos & Fracassos", icon="📉"),
     ],
-    "💰 Cotação Fornecedor": [
-        st.Page("views/cotacao_preco_atual.py", title="Preço Atual", icon="📍"),
-        st.Page("views/cotacao_tendencia.py", title="Tendência", icon="📈"),
-        st.Page("views/cotacao_aliases.py", title="Aliases Pendentes", icon="⏳"),
+    "📡 Radar de Fornecedor": [
+        st.Page("views/radar_fornecedor.py", title="Radar de Fornecedor", icon="📡"),
     ],
     "🔧 Peças Automotivas": [
         st.Page("views/radar_pecas.py", title="Editais Abertos", icon="🔧"),

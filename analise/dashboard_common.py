@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 dashboard_common.py — Estilo, cores, loaders e filtro compartilhado entre as
-páginas do dashboard (Mercado PNCP + Cotação Fornecedor). Nenhuma página
+páginas do dashboard (Mercado PNCP + Radar de Editais). Nenhuma página
 duplica isso — 1 dono só por helper.
 """
 
@@ -23,7 +23,6 @@ from conectar_pncp import (
 )
 from conectar_cotacao_master import (
     carregar_cotacoes as _carregar_cotacoes_master,
-    carregar_aliases_pendentes_detalhe as _carregar_aliases_pendentes_detalhe,
 )
 
 SQL_DIR = Path(__file__).parent
@@ -282,16 +281,12 @@ def carregar_lat_lon() -> pd.DataFrame:
     return ll[["codigo_ibge", "latitude", "longitude"]]
 
 
-# ── Loaders — Cotação Fornecedor ─────────────────────────────────────────────
+# ── Loaders — Cotação Master (usado pelo Radar de Editais) ─────────────────────────────────────────────
 
 @st.cache_data(ttl=300)
 def carregar_cotacao_master() -> pd.DataFrame:
     return _carregar_cotacoes_master()
 
-
-@st.cache_data(ttl=300)
-def carregar_aliases_pendentes_detalhe() -> pd.DataFrame:
-    return _carregar_aliases_pendentes_detalhe()
 
 
 # ── Filtro compartilhado — Mercado PNCP ──────────────────────────────────────

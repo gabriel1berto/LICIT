@@ -76,7 +76,10 @@ licit/
 │   ├── .streamlit/config.toml  Tema escuro (16/jul/2026) — ver "Tema e paleta" abaixo
 │   ├── dashboard_pncp.py       Entrypoint do dashboard (Streamlit multi-page — `st.navigation`)
 │   ├── views/                  Conteúdo de cada página do dashboard (Mercado PNCP + Radar de Editais +
-│   │                           Cotação Fornecedor + Peças Automotivas)
+│   │                           Radar de Fornecedor + Peças Automotivas)
+│   ├── assets/radar_fornecedor.html  Página do Radar de Fornecedor (09/nov/2026): snapshot estático da base
+│   │                           Notion "📫 Fornecedores e portais" (113 fornecedores), mapa por UF + fila de
+│   │                           prioridade de contato. Atualizar = regenerar o HTML, não lê banco/Notion ao vivo
 │   ├── coletor_pecas.py        [Peças Automotivas, 17-19/ago/2026] Fase 1 só — busca óleo lubrificante/
 │   │                           graxa/filtro (ar/óleo/combustível)/bateria automotiva/amortecedor na API
 │   │                           de busca, grava em schema `pecas_automotivas` (isolado de `public`/
@@ -430,8 +433,11 @@ geraria centenas de coluna vazia).
 Pipeline separado do fluxo de cotação por edital (que segue intocado) — cota diariamente as
 medidas de `medidas_prioritarias.json` nos distribuidores já cadastrados (Bransales, Cantu, GP,
 Green Pneus, Della Via), grava histórico no schema `cotacao_fornecedor` (mesmo projeto Supabase
-do mercado PNCP, schema separado — ver `schema_cotacoes_diarias.sql`). Visível na aba
-"💰 Cotação Fornecedor" do dashboard.
+do mercado PNCP, schema separado — ver `schema_cotacoes_diarias.sql`). A aba "💰 Cotação
+Fornecedor" do dashboard (Preço Atual/Tendência/Aliases Pendentes) foi removida em 09/nov/2026,
+substituída pelo "📡 Radar de Fornecedor". O dado continua sendo coletado e usado no Radar de
+Editais (coluna "meu custo"); revisão de aliases (§7.14 do CLAUDE.md) passa a ser via query
+direta no schema, não mais pela página.
 
 **Giga Pneus removido do grupo (15/jul/2026):** nunca ficou em 1º/2º lugar em nenhuma das 12
 medidas comparadas, sem tier de atacado (testado login + kit de 4 unidades, preço idêntico nos
@@ -442,7 +448,8 @@ existindo pra cotação por edital pontual, só saiu do pipeline de coleta diár
 combinando TODOS os fornecedores — quando um fornecedor novo rodava num dia diferente dos
 outros, a comparação sumia com quem tinha rodado em dia mais antigo (mesmo sendo a cotação
 mais recente daquele fornecedor). Corrigido pra usar a última cotação de CADA fornecedor,
-não o dia mais recente do conjunto (`analise/views/cotacao_preco_atual.py`).
+não o dia mais recente do conjunto (`analise/views/cotacao_preco_atual.py`, página removida em
+09/nov/2026).
 
 **Expansão de cobertura (17/jul/2026):** `medidas_prioritarias.json` foi de 30 para 98
 medidas — 30 originais (frequência real, itens Passeio 2026) + 28 achadas faltando no
