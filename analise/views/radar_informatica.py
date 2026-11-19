@@ -1,0 +1,370 @@
+#!/usr/bin/env python3
+"""Página — Radar de Informática: editais ABERTOS e FUTUROS com periférico de
+informática, foco em fornecer 100% pela GET (19/nov/2026, pedido do usuário: "tal qual
+o radar de pneus, mesmos critérios e mapa").
+
+Igual ao radar de pneu (`radar_abertos.py`): filtros Região/UF/Modalidade/Categoria/
+Regime/Portal/Custo, mapa por urgência, CAPAG, Kanban por dia de encerramento.
+Diferenças deliberadas:
+  - Selo GET por edital (🟢 100% GET / 🟡 Parcial / ⚪ Fora) no lugar do funil
+    "meu preço x histórico" — GET cota por WhatsApp, não existe preço nosso na base.
+  - Prazo vem de `data_fim_vigencia` do search API (mesmo proxy do radar de Peças) —
+    teto de 45 dias no Kanban, resto em "Vigência longa" (provável ata/credenciamento).
+  - Inclui edital FUTURO (abertura de proposta ainda não chegou), marcado 🔜.
+
+Só leitura — nenhum botão aqui dispara coletor/análise/Notion.
+"""
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+from conectar_informatica import SELO_PENDENTE, carregar_editais_informatica, carregar_itens_informatica
+from dashboard_common import (
+    COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING, ORDEM_REGIOES, REGIAO_POR_UF,
+    capag_do_orgao, carregar_capag_estados, carregar_capag_municipios, carregar_lat_lon, cor_capag,
+    custo_fornecedor, dominio_de, fmt_abrev, fundo_transparente, portal_de,
+)
+from ui_explicacao import cabecalho_pagina, regra
+
+WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+TETO_DIAS_KANBAN = 45
+MAX_CARDS_POR_COLUNA = 8
+
+SELOS = [
+    ("100% GET", "🟢"),
+    ("Parcial GET", "🟡"),
+    ("Fora da GET", "⚪"),
+    ("Sem item de informática", "▫️"),
+    (SELO_PENDENTE, "⏳"),
+]
+ICONE_SELO = dict(SELOS)
+ORDEM_SELO = {s: i for i, (s, _) in enumerate(SELOS)}
+ICONE_COB = {"sim": "✅", "talvez": "❔", "nao": "❌"}
+
+
+@st.cache_data(ttl=300)
+def _carregar() -> tuple[pd.DataFrame, pd.DataFrame]:
+    itens = carregar_itens_informatica()
+    return carregar_editais_informatica(itens), itens
+
+
+st.title("💻 Radar de Informática")
+
+cabecalho_pagina(
+    pergunta="Quais editais de periférico de informática estão abertos (ou vão abrir), e "
+    "quais dá pra atender 100% com produto GET?",
+    fonte="Busca direta na API do PNCP + itens de cada edital (`analise/coletor_informatica.py`), "
+    "schema `informatica` — isolado do dado de pneu/onco/peças. Catálogo GET de 19/nov/2026.",
+)
+
+with regra("ℹ️ Como o selo GET e o 'aberto' são decididos"):
+    st.markdown(
+        "**Aberto/futuro:** busca do PNCP com status *recebendo proposta*, situação "
+        "'Divulgada no PNCP', não cancelado, não Leilão, prazo no futuro. 🔜 = abertura de "
+        "proposta ainda não chegou.\n\n"
+        "**Item de informática:** a descrição do item precisa **começar** pelo produto "
+        "(nobreak, monitor, teclado, mouse, headset, projetor, SSD, computador...). Serviço, "
+        "locação, toner, bateria avulsa, suporte, monitor médico ficam de fora "
+        "(`filtro_informatica.py`).\n\n"
+        "**Cobertura GET por item:** ✅ sim (linha existe e spec cabe — nobreak até 3.000VA, "
+        "monitor 15-27\", teclado/mouse, headset, projetor, SSD/pendrive/memória, caixa de "
+        "som de PC) · ❔ talvez (computador/tablet, ou descrição sem VA/polegada) · ❌ não "
+        "(notebook, impressora, webcam, estabilizador, nobreak > 3kVA, monitor > 27\").\n\n"
+        "**Selo do edital:** 🟢 100% GET = todo item de informática é ✅ ou ❔ · 🟡 Parcial · "
+        "⚪ Fora · ⏳ itens ainda não coletados.\n\n"
+        "⚠️ **Nobreak GET é quase todo saída 115V** (só o 3000VA é 220/220V). TR que exige "
+        "saída 220V elimina o item — confirmar no TR e com a GET antes de cotar.\n\n"
+        "**Prazo:** `data_fim_vigencia` do search API (fase 1). Em SRP/credenciamento pode ser "
+        "vigência de ata — por isso >45 dias vai pra coluna 'Vigência longa'.\n\n"
+        "**CAPAG:** mesma regra do radar de pneu (município, senão estado). Risco de "
+        "calote/atraso, nunca decide sozinho."
+    )
+
+editais, itens = _carregar()
+if editais.empty:
+    st.info("Nenhum edital de informática aberto na base ainda — coletor não rodou?")
+    st.stop()
+
+editais["regiao"] = editais["uf"].map(REGIAO_POR_UF)
+editais["portal_dominio"] = editais["link_sistema_origem"].apply(dominio_de)
+editais["portal"] = editais["portal_dominio"].apply(portal_de)
+editais["custo_fornecedor"] = editais["portal_dominio"].apply(custo_fornecedor)
+
+_total = len(editais)
+so_info = st.toggle(
+    "Só editais com item de informática confirmado", value=True, key="so_info_radar_info",
+    help="A busca do PNCP acha o termo em qualquer lugar (anexo, item de outra coisa). Ligado, "
+    "mostra só edital com pelo menos 1 item classificado como informática — esconde também os "
+    "que ainda não tiveram os itens coletados (⏳).",
+)
+if so_info:
+    editais = editais[editais["n_itens_info"] > 0]
+st.caption(f"{len(editais)} de {_total} editais abertos/futuros na base" +
+           (" têm item de informática." if so_info else "."))
+
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    regioes_disp = [r for r in ORDEM_REGIOES if r in set(editais["regiao"].dropna())]
+    reg_sel = st.multiselect(
+        "Região", regioes_disp, default=[r for r in ["Nordeste"] if r in regioes_disp], key="regiao_radar_info"
+    )
+with c2:
+    ufs_disp = editais.loc[editais["regiao"].isin(reg_sel), "uf"] if reg_sel else editais["uf"]
+    ufs_disp = sorted(ufs_disp.dropna().unique())
+    if "uf_radar_info" in st.session_state:
+        st.session_state["uf_radar_info"] = [u for u in st.session_state["uf_radar_info"] if u in ufs_disp]
+    uf_sel = st.multiselect("UF", ufs_disp, key="uf_radar_info")
+with c3:
+    selo_sel = st.multiselect(
+        "Selo GET", [s for s, _ in SELOS if s in set(editais["selo"])], key="selo_radar_info",
+        format_func=lambda s: f"{ICONE_SELO[s]} {s}",
+    )
+with c4:
+    cats_disp = sorted({c.strip() for cs in editais["categorias"] for c in cs.split(",") if c.strip()})
+    cat_sel = st.multiselect("Categoria de produto", cats_disp, key="cat_radar_info")
+
+c5, c6, c7, c8, c9 = st.columns(5)
+with c5:
+    mod_sel = st.multiselect(
+        "Modalidade", sorted(editais["modalidade_licitacao_nome"].dropna().unique()), key="mod_radar_info"
+    )
+with c6:
+    regime_sel = st.multiselect(
+        "Regime", sorted(editais["regime"].dropna().unique()), key="regime_radar_info",
+        help="RP = Registro de Preço (SRP) · CD = Compra Direta (sem SRP)",
+    )
+with c7:
+    portal_sel = st.multiselect("Portal", sorted(editais["portal"].unique()), key="portal_radar_info")
+with c8:
+    custo_sel = st.multiselect(
+        "Custo p/ fornecedor", ["Grátis", "Pago", "Não identificado"], key="custo_radar_info",
+        help="Mesma pesquisa por portal do radar de pneu (06/ago/2026).",
+    )
+with c9:
+    abertura_sel = st.multiselect("Abertura", ["Aberto agora", "🔜 Futuro"], key="abertura_radar_info")
+
+if reg_sel:
+    editais = editais[editais["regiao"].isin(reg_sel)]
+if uf_sel:
+    editais = editais[editais["uf"].isin(uf_sel)]
+if selo_sel:
+    editais = editais[editais["selo"].isin(selo_sel)]
+if cat_sel:
+    editais = editais[editais["categorias"].apply(lambda s: any(c in s for c in cat_sel))]
+if mod_sel:
+    editais = editais[editais["modalidade_licitacao_nome"].isin(mod_sel)]
+if regime_sel:
+    editais = editais[editais["regime"].isin(regime_sel)]
+if portal_sel:
+    editais = editais[editais["portal"].isin(portal_sel)]
+if custo_sel:
+    editais = editais[editais["custo_fornecedor"].isin(custo_sel)]
+if abertura_sel:
+    quer_futuro = "🔜 Futuro" in abertura_sel
+    quer_aberto = "Aberto agora" in abertura_sel
+    editais = editais[(editais["futuro"] & quer_futuro) | (~editais["futuro"] & quer_aberto)]
+
+if editais.empty:
+    st.warning("Nenhum edital bate esses filtros.")
+    st.stop()
+
+# Resumo do filtro — quanto dá pra atender só com GET.
+_get = editais[editais["selo"] == "100% GET"]
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Editais no filtro", len(editais))
+m2.metric("🟢 100% GET", len(_get))
+m3.metric("Valor 100% GET", f"R$ {fmt_abrev(_get['valor_get'].sum())}")
+m4.metric("🔜 Futuros", int(editais["futuro"].sum()))
+
+_capag_mun = carregar_capag_municipios()
+_capag_uf = carregar_capag_estados()
+MAPA_CAPAG_MUN = dict(zip(_capag_mun["codigo_ibge"], _capag_mun["capag"]))
+MAPA_CAPAG_UF = dict(zip(_capag_uf["uf"], _capag_uf["capag"]))
+
+BUCKETS = [
+    ("🔴", "Urgente", COR_STATUS_CRITICAL, lambda d: d <= 2),
+    ("🟡", "Esta semana", COR_STATUS_WARNING, lambda d: 2 < d <= 7),
+    ("🟢", "Depois", COR_STATUS_GOOD, lambda d: d > 7),
+]
+
+
+def _bucket(d: float) -> tuple[str, str, str]:
+    for icone, titulo, cor, cond in BUCKETS:
+        if cond(d):
+            return icone, titulo, cor
+    return "❔", "Sem prazo", COR_STATUS_GOOD
+
+
+editais["bucket_label"] = editais["dias_restantes"].apply(lambda d: " ".join(_bucket(d)[:2]))
+CORES_BUCKET = {f"{i} {t}": c for i, t, c, _ in BUCKETS}
+
+st.subheader("Onde estão os editais")
+mapa_df = editais.dropna(subset=["codigo_ibge"]).merge(carregar_lat_lon(), on="codigo_ibge", how="left")
+mapa_df = mapa_df.dropna(subset=["latitude", "longitude"])
+if mapa_df.empty:
+    st.info("Sem coordenada de município pra mostrar no mapa nesse filtro.")
+else:
+    mapa_df["selo_label"] = mapa_df["selo"].map(lambda s: f"{ICONE_SELO.get(s, '')} {s}")
+    zoom = max(3.0, 8.5 - 1.4 * max(
+        mapa_df["latitude"].max() - mapa_df["latitude"].min(),
+        mapa_df["longitude"].max() - mapa_df["longitude"].min(),
+        0.5,
+    ))
+    fig_mapa = px.scatter_map(
+        mapa_df, lat="latitude", lon="longitude", color="bucket_label",
+        category_orders={"bucket_label": list(CORES_BUCKET)},
+        color_discrete_map=CORES_BUCKET,
+        hover_name="orgao_nome",
+        hover_data={"municipio": True, "uf": True, "dias_restantes": ":.1f", "selo_label": True,
+                    "categorias": True, "latitude": False, "longitude": False},
+        center={"lat": mapa_df["latitude"].mean(), "lon": mapa_df["longitude"].mean()},
+        zoom=zoom, map_style="carto-darkmatter",
+    )
+    fig_mapa.update_traces(marker=dict(size=12))
+    fig_mapa.update_layout(height=500, margin=dict(l=0, r=0, t=0, b=0), legend_title_text="")
+    fundo_transparente(fig_mapa)
+    st.plotly_chart(fig_mapa, use_container_width=True)
+
+st.divider()
+
+contagem_orgao = editais["orgao_nome"].value_counts()
+editais["_ordem_selo"] = editais["selo"].map(ORDEM_SELO).fillna(99)
+editais = editais.sort_values(["_ordem_selo", "valor_get", "dias_restantes"], ascending=[True, False, True])
+editais["data_dia"] = editais["data_fim_vigencia"].dt.date
+editais_kanban = editais[editais["dias_restantes"] <= TETO_DIAS_KANBAN]
+editais_longa = editais[editais["dias_restantes"] > TETO_DIAS_KANBAN]
+itens_por_edital = dict(tuple(itens[itens["categoria"].notna()].groupby("numero_controle_pncp"))) \
+    if not itens.empty else {}
+
+_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None).date()
+dias_lista = [] if editais_kanban.empty else list(pd.date_range(_hoje, editais_kanban["data_dia"].max()).date)
+
+st.markdown(
+    """
+    <style>
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-child(20)) {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        padding-bottom: 12px;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-child(20)) > div[data-testid="stColumn"],
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-child(20)) > div[data-testid="column"] {
+        min-width: 260px !important;
+        flex: 0 0 260px !important;
+        width: 260px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+def _brl(v: float) -> str:
+    return f"R$ {v:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def _render_card(row: pd.Series, cor: str) -> None:
+    with st.container(border=True):
+        st.markdown(
+            f'<div style="height:4px;background:{cor};border-radius:2px;margin-bottom:10px;"></div>',
+            unsafe_allow_html=True,
+        )
+        st.metric("Encerra em", f"{row['dias_restantes']:.1f} dia(s)")
+        if row["futuro"]:
+            st.caption(f"🔜 Abre proposta em {row['data_inicio_vigencia']:%d/%m %H:%M}")
+        orgao = row["orgao_nome"] + (" 🔁" if contagem_orgao.get(row["orgao_nome"], 0) > 1 else "")
+        st.caption(f"**{orgao}** — {row['municipio']}/{row['uf']}")
+        st.caption(f"**{ICONE_SELO.get(row['selo'], '')} {row['selo']}**")
+        nota, origem = capag_do_orgao(row["codigo_ibge"], row["uf"], MAPA_CAPAG_MUN, MAPA_CAPAG_UF)
+        if nota:
+            c = cor_capag(nota)
+            ic = "🟢" if c == COR_STATUS_GOOD else "🟡" if c == COR_STATUS_WARNING else "🔴"
+            st.caption(f"{ic} CAPAG {nota} ({origem})")
+        else:
+            st.caption("⚪ CAPAG sem dado")
+        if row["n_itens_info"]:
+            st.caption(row["categorias"])
+            if row["valor_info"] > 0:
+                st.caption(f"Informática: R$ {fmt_abrev(row['valor_info'])} · GET: R$ {fmt_abrev(row['valor_get'])}")
+            else:
+                st.caption("Sem valor estimado (sigiloso ou não informado)")
+            if row["n_itens_info"] < row["n_itens_total"]:
+                st.caption(f"⚠️ {row['n_itens_info']} de {row['n_itens_total']} itens são informática")
+        st.caption(f"{row['portal']} · {row['custo_fornecedor']}")
+        st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)
+        with st.expander("Detalhes"):
+            obj = str(row["objeto"] or "(sem objeto descrito)")
+            st.caption(obj[:250] + ("…" if len(obj) > 250 else ""))
+            st.caption(f"{row['modalidade_licitacao_nome'] or '—'} · {row['regime'] or '—'} · "
+                       f"encerra {row['data_fim_vigencia']:%d/%m/%Y %H:%M}")
+            it = itens_por_edital.get(row["numero_controle_pncp"])
+            if it is not None:
+                tab = it.assign(GET=it["cobertura_get"].map(ICONE_COB), Descrição=it["descricao"].str[:90])
+                st.dataframe(
+                    tab[["numero_item", "categoria", "GET", "quantidade", "valor_unitario_estimado", "Descrição"]],
+                    hide_index=True, use_container_width=True,
+                    column_config={
+                        "numero_item": "Item", "categoria": "Categoria", "quantidade": "Qtde",
+                        "valor_unitario_estimado": st.column_config.NumberColumn("Unit. est.", format="R$ %.2f"),
+                    },
+                )
+
+
+n_cols = len(dias_lista) + (1 if not editais_longa.empty else 0)
+cols = st.columns(max(n_cols, 1))
+for col, dia in zip(cols, dias_lista):
+    with col:
+        faltam = (dia - _hoje).days
+        icone, _, cor = _bucket(faltam)
+        st.markdown(f"#### {icone} {WEEKDAYS_PT[dia.weekday()]} {dia.strftime('%d/%m')}")
+        st.caption("Encerra hoje" if faltam == 0 else "Falta 1 dia" if faltam == 1 else f"Faltam {faltam} dias")
+        bucket = editais_kanban[editais_kanban["data_dia"] == dia]
+        if bucket.empty:
+            st.caption("Nenhum edital nesse dia.")
+            continue
+        if len(bucket) > MAX_CARDS_POR_COLUNA:
+            st.caption(f"Mostrando {MAX_CARDS_POR_COLUNA} de {len(bucket)} — resto na tabela abaixo.")
+        for _, row in bucket.head(MAX_CARDS_POR_COLUNA).iterrows():
+            _render_card(row, cor)
+
+if not editais_longa.empty:
+    with cols[-1]:
+        st.markdown(f"#### 📦 Vigência longa (>{TETO_DIAS_KANBAN}d)")
+        st.caption("Provável vigência de ata/credenciamento, não fim de proposta — confirmar no link.")
+        if len(editais_longa) > MAX_CARDS_POR_COLUNA:
+            st.caption(f"Mostrando {MAX_CARDS_POR_COLUNA} de {len(editais_longa)} — resto na tabela abaixo.")
+        for _, row in editais_longa.head(MAX_CARDS_POR_COLUNA).iterrows():
+            _render_card(row, COR_STATUS_GOOD)
+
+st.markdown("#### Lista completa")
+st.caption(f"Todos os editais do filtro, 100% GET primeiro. O Kanban mostra só {MAX_CARDS_POR_COLUNA} por dia.")
+tabela = editais.assign(selo_label=editais["selo"].map(lambda s: f"{ICONE_SELO.get(s, '')} {s}"))
+st.dataframe(
+    tabela[[
+        "data_fim_vigencia", "dias_restantes", "futuro", "selo_label", "uf", "municipio", "orgao_nome",
+        "categorias", "n_itens_info", "valor_info", "valor_get", "modalidade_licitacao_nome", "regime",
+        "portal", "objeto", "pncp_url",
+    ]],
+    hide_index=True,
+    use_container_width=True,
+    column_config={
+        "data_fim_vigencia": st.column_config.DatetimeColumn("Encerra em", format="DD/MM/YYYY HH:mm"),
+        "dias_restantes": st.column_config.NumberColumn("Dias", format="%.1f"),
+        "futuro": st.column_config.CheckboxColumn("🔜"),
+        "selo_label": "Selo GET",
+        "uf": "UF", "municipio": "Município", "orgao_nome": "Órgão", "categorias": "Categorias",
+        "n_itens_info": "Itens info",
+        "valor_info": st.column_config.NumberColumn("Valor informática (R$)", format="%.2f"),
+        "valor_get": st.column_config.NumberColumn("Valor GET (R$)", format="%.2f"),
+        "modalidade_licitacao_nome": "Modalidade", "regime": "Regime", "portal": "Portal",
+        "objeto": st.column_config.TextColumn("Objeto", width="large"),
+        "pncp_url": st.column_config.LinkColumn("PNCP", display_text="Abrir"),
+    },
+)
+
+st.divider()
+st.caption(
+    "Próximo passo de um edital 🟢: card no Notion + skill analise-de-edital, depois cotação GET "
+    "no WhatsApp (catálogo app.ibyte.com.br/get-catalog). Nenhuma escrita acontece a partir deste dashboard."
+)

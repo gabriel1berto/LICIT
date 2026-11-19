@@ -15,6 +15,9 @@ dashboard_pncp.py — Entrypoint do dashboard (Streamlit multi-page nativo).
     pneu (schema `pecas_automotivas`, óleo/graxa/filtro/bateria/amortecedor)
     — só radar de editais abertos, fase 1 (sem detalhe/item), sem cotação de
     fornecedor ainda. Ver analise/coletor_pecas.py.
+  - "Informática" (19/nov/2026): radar de editais abertos/futuros de periférico
+    (schema `informatica`, com itens), selo de cobertura pelo catálogo GET. Ver
+    analise/coletor_informatica.py.
 
 Conteúdo de cada página vive em views/*.py — este arquivo só declara a
 navegação e o page_config global.
@@ -42,6 +45,9 @@ pagina = st.navigation({
     ],
     "🔧 Peças Automotivas": [
         st.Page("views/radar_pecas.py", title="Editais Abertos", icon="🔧"),
+    ],
+    "💻 Informática": [
+        st.Page("views/radar_informatica.py", title="Editais Abertos", icon="💻"),
     ],
 })
 

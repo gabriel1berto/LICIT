@@ -2,9 +2,10 @@
 
 Context permanente para todas as sessões. Ler integralmente no início de cada conversa.
 
-Documento organizado em 3 partes: **espinha dorsal** (arquitetura/ferramentas/regras
+Documento organizado em 4 partes: **espinha dorsal** (arquitetura/ferramentas/regras
 comuns, valem pra qualquer vertical), **Anexo A — Vertical Pneu** (negócio ativo, vende
-de verdade) e **Anexo B — Vertical Oncológico** (exploração de mercado, não vende ainda).
+de verdade), **Anexo B — Vertical Oncológico** (exploração de mercado, não vende ainda) e
+**Anexo C — Vertical Informática** (radar + fornecedor GET, 1ª proposta pendente).
 Números de seção **não mudam** quando um fato é citado em outro lugar (README, memória)
 — só a posição física no arquivo foi reorganizada.
 
@@ -33,6 +34,7 @@ Números de seção **não mudam** quando um fato é citado em outro lugar (READ
 |---|---|---|---|
 | **Pneu** | Ativo, único com histórico de propostas/contrato | Sim — radar→análise→cotação→proposta rodando ponta a ponta | Anexo A |
 | **Oncológico** | Exploração de mercado (pipeline iniciado 23/jul/2026) | Não — só coleta/classifica/mostra tamanho de mercado (vitrine, ver `analise_onco/views/mais_no_licit.py`) | Anexo B |
+| **Informática** | Radar ativo (19/nov/2026), sem proposta ainda | Ainda não — radar + fornecedor GET cadastrado; 1ª proposta pendente | Anexo C |
 
 Cada vertical tem seu próprio pipeline de mercado (coletor fase 1/fase 2 + filtro de classificação + dashboard) na mesma arquitetura — ver `README.md` § Estrutura. O que muda de vertical pra vertical é o vocabulário/regra do filtro e se já existe (ou não) o resto do fluxo comercial (cotação, habilitação, proposta) por trás.
 
@@ -429,3 +431,27 @@ duplicar aqui.
 
 Regra de auto-aperfeiçoamento (mesmo processo do pneu, calendário compartilhado): §15
 (backbone).
+
+---
+
+# PARTE 4 — ANEXO C: VERTICAL INFORMÁTICA (radar, 19/nov/2026)
+
+## 19. Vertical Informática
+
+CNAE 4751-2/01 já está no cartão CNPJ (§1). Foco em **periféricos** (nobreak, monitor, teclado/
+mouse, headset, projetor, SSD), não computador/notebook — decisão do usuário 18/nov/2026.
+Preferência geográfica: **Nordeste**. Estratégia: ganhar edital atendido **100% pela GET**.
+
+**Fornecedor principal — GET (ex-Goldentec, fábrica em Fortaleza, marcas GET/TCN/OX):** cadastro de
+parceiro feito 19/nov/2026. Cotação manual: escolher produto no catálogo
+`app.ibyte.com.br/get-catalog/` (sem login, sem preço) e cotar por WhatsApp. Sem scraper — não existe
+portal B2B com preço. Linhas que a GET **não** tem: webcam, estabilizador, notebook, impressora.
+Status dos demais fornecedores de periférico: memória do assistente (estado vivo, muda rápido).
+
+**Fluxo (mesmo funil do pneu, manual primeiro — regra §7.8):** Radar (`💻 Informática` no
+dashboard, detalhe técnico em `README.md` Parte 4) → card Notion no mesmo Kanban → skill
+`analise-de-edital` (colunas Construção/IC-IV/Lonas ficam vazias, sem redesign — regra §7.9) →
+cotação GET no WhatsApp → planilha preenchida à mão (só bloco GET) → proposta. Regra §6.1 vale igual:
+só participar com preço GET confirmado antes da sessão. Habilitação é a mesma da empresa (§11).
+Estudo de mercado CE (volumes, vencedores, marcas): `analise/informatica_ce/README.md` (local, gitignorado).
+

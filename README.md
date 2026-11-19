@@ -14,6 +14,7 @@ Documento organizado em 3 partes: **espinha dorsal** (ferramentas e arquitetura 
 |---|---|---|
 | **Pneu** | Ativo — vende de verdade pro governo | Radar → análise → cotação → habilitação → proposta, ponta a ponta (ver Anexo Pneu) |
 | **Oncológico** | Exploração de mercado (iniciado 23/jul/2026) | Só coleta/classifica/mostra tamanho de mercado — vitrine, não vende ainda (ver Anexo Onco) |
+| **Informática** | Radar (iniciado 19/nov/2026) — foco periférico fornecido pela GET | Radar de editais abertos/futuros com selo de cobertura GET; análise/cotação ainda manuais (ver Anexo Informática) |
 
 Cada vertical tem seu pipeline de mercado próprio (`analise/` pra pneu, `analise_onco/` pra onco) na mesma arquitetura — ver "Estrutura" abaixo. O que muda é o vocabulário/regra do filtro de classificação e se o resto do fluxo comercial (cotação/habilitação/proposta) já existe por trás.
 
@@ -76,7 +77,7 @@ licit/
 │   ├── .streamlit/config.toml  Tema escuro (16/jul/2026) — ver "Tema e paleta" abaixo
 │   ├── dashboard_pncp.py       Entrypoint do dashboard (Streamlit multi-page — `st.navigation`)
 │   ├── views/                  Conteúdo de cada página do dashboard (Mercado PNCP + Radar de Editais +
-│   │                           Radar de Fornecedor + Peças Automotivas)
+│   │                           Radar de Fornecedor + Peças Automotivas + Informática)
 │   ├── assets/radar_fornecedor.html  Página do Radar de Fornecedor (09/nov/2026): snapshot estático da base
 │   │                           Notion "📫 Fornecedores e portais" (113 fornecedores), mapa por UF + fila de
 │   │                           prioridade de contato. Atualizar = regenerar o HTML, não lê banco/Notion ao vivo
@@ -95,6 +96,13 @@ licit/
 │   ├── conectar_pecas.py       Query única (carregar_editais_abertos_pecas) — "aberto" decidido por
 │   │                           situacao_nome + data_fim_vigencia (dataFimVigencia do search API),
 │   │                           sem precisar de fase 2 pra isso.
+│   ├── coletor_informatica.py  [Informática, 19/nov/2026] Busca 14 termos (nobreak, monitor, teclado, mouse,
+│   │                           headset, projetor, SSD, computador...) com `status=recebendo_proposta`
+│   │                           (abertos + futuros) e coleta os ITENS de cada edital. Schema `informatica`
+│   │                           (`schema_informatica.sql`). Diário via `.github/workflows/informatica_coletor.yml`.
+│   ├── filtro_informatica.py   Categoria do item + cobertura do catálogo GET (sim/talvez/não) + selo do
+│   │                           edital. Calculado na LEITURA, não gravado. Testes: test_filtro_informatica.py.
+│   ├── conectar_informatica.py Editais abertos/futuros + itens classificados (usado por views/radar_informatica.py).
 │   ├── recomputar_filtro.py    Reaplica filtro_pneu.py sem reraspar (quando o filtro muda)
 │   ├── migrar_para_supabase.py Migração one-shot SQLite → Postgres (já rodada, mantida por histórico)
 │   ├── schema_supabase.sql     Schema das 6 tabelas (schema `public`, mercado PNCP)
@@ -144,6 +152,7 @@ licit/
 | `onco_coletor_editais.yml` | Onco | diário | Fase 1 onco — busca todos os termos do vocabulário (`analise_onco/coletor_onco.py`) |
 | `onco_coletor_detalhe.yml` | Onco | periódico | Fase 2 onco — processa fila pendente (`coletor_onco_detalhe.py`) |
 | `cotacao_master.yml` | Pneu | diário, 12h UTC / 9h BRT | Ver Anexo Pneu § Cotação Master |
+| `informatica_coletor.yml` | Informática | diário, 05:30 UTC (+ manual) | Busca abertos/futuros + itens pendentes (até 1.500 editais/rodada) |
 
 Fase 2 não descobre edital novo sozinha — só fase 1 faz isso (API não permite paginar por data). Rodar `coletor_pncp.py --reset` é a única forma de achar processo novo.
 
@@ -585,3 +594,35 @@ classificação + achado de cobertura, `recomputar_filtro_onco.py` rodado —
   em-termo-maior (0 colisões nos 115 termos), variantes em inglês sem sufixo "-e",
   sinais estruturais (`criterio_julgamento_nome`, `tipo_beneficio_nome`, `unidade_medida`,
   extremos de valor).
+
+---
+
+# PARTE 4 — ANEXO: VERTICAL INFORMÁTICA (radar, 19/nov/2026)
+
+Contexto de negócio (fornecedor GET, como cota, fluxo): CLAUDE.md Anexo C. Aqui só o técnico.
+Sem funil "meu preço x histórico" porque a cotação GET é manual (WhatsApp), sem preço nosso na base.
+
+## Radar (`views/radar_informatica.py`)
+
+Mesma estrutura do Radar de Editais do pneu: filtros Região (padrão Nordeste)/UF/Selo GET/Categoria/
+Modalidade/Regime/Portal/Custo/Abertura, mapa por urgência, CAPAG, Kanban por dia (teto 45 dias +
+coluna "Vigência longa", 8 cards/dia) e tabela completa. Prazo = `data_fim_vigencia` do search API
+(mesmo proxy do radar de Peças). 🔜 = abertura de proposta ainda no futuro (`data_inicio_vigencia`).
+
+## Classificação (`filtro_informatica.py`)
+
+- **Categoria:** termo do produto precisa aparecer nos primeiros 50 caracteres da descrição do item;
+  ganha o que aparece primeiro. Exclui serviço/locação/toner/bateria avulsa/suporte/equipamento médico.
+- **Cobertura GET** (catálogo 19/nov/2026, 718 SKUs): ✅ nobreak até 3.000VA, monitor 15-27", teclado/
+  mouse, headset/fone, projetor, SSD/pendrive/memória, caixa de som de PC · ❔ computador, tablet,
+  nobreak/monitor sem número na descrição, caixa de som genérica · ❌ notebook, impressora, webcam,
+  estabilizador, nobreak > 3kVA, monitor > 27".
+- **Selo do edital:** 100% GET (todo item de informática ✅/❔) · Parcial · Fora · Itens não coletados.
+- ⚠️ Nobreak GET é quase todo saída 115V (só 3000VA é 220V) — TR com saída 220V elimina.
+
+Calibração 19/nov/2026 (678 itens reais, 1ª coleta do termo Nobreak): 12 falsos positivos corrigidos
+com teste antes do fix — tomógrafo "computadorizado", autoclave/ultrassom com "impressora/teclado" no meio
+do texto, "Computador Portátil (Notebook)" (CATMAT), monitor de uso médico, projetor de optótipos,
+"Fonte Alimentação Ininterrupta" (nome CATMAT de nobreak), formato "tamanho tela: 25", HTML na descrição.
+48 casos em `test_filtro_informatica.py`. Rodada de auto-aperfeiçoamento: mesmo processo comum (Parte 1).
+

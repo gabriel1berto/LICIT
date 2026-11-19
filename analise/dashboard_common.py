@@ -132,6 +132,36 @@ def portal_de(dominio: str | None) -> str:
     return PORTAIS_CONHECIDOS.get(dominio, dominio)
 
 
+# Custo pro FORNECEDOR (não pro órgão) de participar — pesquisado individualmente
+# 06/ago/2026 (fonte: site oficial de cada portal + ConLicitação/Effecti), não é
+# suposição. "Pago" cobre qualquer modelo (mensalidade, taxa por certame, comissão
+# sobre lote vencido) — o achado real foi que a maioria dos portais privados de
+# maior volume é paga, ao contrário do que se assumiria de cara. Fora dessa lista
+# (inclui domínio de prefeitura/estado sem link mapeado) cai em "Não identificado"
+# — nunca inventar cobrança sem fonte, mesmo pra portal pequeno.
+CUSTO_FORNECEDOR = {
+    "cnetmobile.estaleiro.serpro.gov.br": "Grátis",   # SICAF, federal — sem taxa
+    "pregaobanrisul.com.br": "Grátis",                # registro grátis, sem taxa de disputa
+    "portaldecompraspublicas.com.br": "Pago",         # R$129/crédito ou assinatura
+    "bnccompras.com": "Pago",                          # plano de participação obrigatório
+    "bllcompras.com": "Pago",                          # comissão 1,5%/R$600 sobre lote vencido
+    "app2.licitardigital.com.br": "Pago",              # taxa de ressarcimento de TI (Lei 14.133)
+    "app2.ammlicita.org.br": "Pago",                   # 1,3% do valor homologado, até R$500
+    "licitanet.com.br": "Pago",
+    "portal.licitanet.com.br": "Pago",
+    "licitacoes-e2.bb.com.br": "Pago",                 # mensalidade/anual de validação de acesso
+    "comprasbr.com.br": "Pago",                        # R$96/leilão avulso (plano único)
+}
+
+
+def custo_fornecedor(dominio: str | None) -> str:
+    if not dominio:
+        return "Não identificado"
+    if dominio.endswith(".gov.br"):
+        return "Grátis"  # sistema do próprio ente público, sem intermediário comercial
+    return CUSTO_FORNECEDOR.get(dominio, "Não identificado")
+
+
 def cor_categorica_ordenada(rotulos_em_ordem: list[str]) -> dict[str, str]:
     """Mapa {rótulo: hex} pela ordem fixa da paleta validada — rótulo mais
     relevante (ranking já decidido por quem chama) pega slot 1, e assim por

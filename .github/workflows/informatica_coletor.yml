@@ -1,0 +1,30 @@
+name: Informática Coletor — Editais abertos/futuros + itens
+
+on:
+  schedule:
+    - cron: '30 5 * * *'   # 05:30 UTC (~02h30 BRT), depois do coletor de peças
+  workflow_dispatch:
+
+jobs:
+  coleta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r analise/requirements.txt
+
+      - name: Rodar coletor de informática (busca + itens pendentes)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: analise
+        # teto de itens por rodada: o que sobrar entra no dia seguinte (commit por edital)
+        run: python coletor_informatica.py --max-itens 1500

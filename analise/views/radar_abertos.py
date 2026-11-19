@@ -16,7 +16,8 @@ from dashboard_common import (
     capag_do_orgao, carregar_base, carregar_capag_estados, carregar_capag_municipios,
     carregar_cotacao_master, carregar_editais_abertos,
     carregar_itens_pneu_editais_abertos, carregar_lat_lon, carregar_ultima_carga_detalhes,
-    cor_capag, dominio_de as _dominio_de, fmt_abrev, fundo_transparente, portal_de as _portal_de,
+    cor_capag, custo_fornecedor as _custo_fornecedor, dominio_de as _dominio_de, fmt_abrev,
+    fundo_transparente, portal_de as _portal_de,
 )
 from ui_explicacao import cabecalho_pagina, regra
 
@@ -85,36 +86,6 @@ with regra("ℹ️ Como esse Kanban decide o que é 'aberto'"):
         "depois de vencer**, não de qualidade do edital em si — nunca decide sozinho se "
         "vale participar."
     )
-
-# Custo pro FORNECEDOR (não pro órgão) de participar — pesquisado individualmente
-# 06/ago/2026 (fonte: site oficial de cada portal + ConLicitação/Effecti), não é
-# suposição. "Pago" cobre qualquer modelo (mensalidade, taxa por certame, comissão
-# sobre lote vencido) — o achado real foi que a maioria dos portais privados de
-# maior volume é paga, ao contrário do que se assumiria de cara. Fora dessa lista
-# (inclui domínio de prefeitura/estado sem link mapeado) cai em "Não identificado"
-# — nunca inventar cobrança sem fonte, mesmo pra portal pequeno.
-_CUSTO_FORNECEDOR = {
-    "cnetmobile.estaleiro.serpro.gov.br": "Grátis",   # SICAF, federal — sem taxa
-    "pregaobanrisul.com.br": "Grátis",                # registro grátis, sem taxa de disputa
-    "portaldecompraspublicas.com.br": "Pago",         # R$129/crédito ou assinatura
-    "bnccompras.com": "Pago",                          # plano de participação obrigatório
-    "bllcompras.com": "Pago",                          # comissão 1,5%/R$600 sobre lote vencido
-    "app2.licitardigital.com.br": "Pago",              # taxa de ressarcimento de TI (Lei 14.133)
-    "app2.ammlicita.org.br": "Pago",                   # 1,3% do valor homologado, até R$500
-    "licitanet.com.br": "Pago",
-    "portal.licitanet.com.br": "Pago",
-    "licitacoes-e2.bb.com.br": "Pago",                 # mensalidade/anual de validação de acesso
-    "comprasbr.com.br": "Pago",                        # R$96/leilão avulso (plano único)
-}
-
-
-def _custo_fornecedor(dominio: str | None) -> str:
-    if not dominio:
-        return "Não identificado"
-    if dominio.endswith(".gov.br"):
-        return "Grátis"  # sistema do próprio ente público, sem intermediário comercial
-    return _CUSTO_FORNECEDOR.get(dominio, "Não identificado")
-
 
 editais = carregar_editais_abertos()
 if editais.empty:
