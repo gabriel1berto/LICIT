@@ -9,3 +9,4 @@ sqlalchemy>=2.0
 python-dotenv>=1.0
 # 05/out/2026: linha tocada pra forcar reinicio do app no Streamlit Cloud (modulo conectar_pecas ficou em cache) (2x)
 # 19/nov/2026: idem — dashboard_common antigo em cache sem custo_fornecedor (ImportError no radar_abertos)
+# 19/nov/2026 (2): idem preventivo — conectar_informatica importa funções novas do filtro_informatica
