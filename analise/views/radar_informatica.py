@@ -91,6 +91,18 @@ editais["portal_dominio"] = editais["link_sistema_origem"].apply(dominio_de)
 editais["portal"] = editais["portal_dominio"].apply(portal_de)
 editais["custo_fornecedor"] = editais["portal_dominio"].apply(custo_fornecedor)
 
+_capag_mun = carregar_capag_municipios()
+_capag_uf = carregar_capag_estados()
+MAPA_CAPAG_MUN = dict(zip(_capag_mun["codigo_ibge"], _capag_mun["capag"]))
+MAPA_CAPAG_UF = dict(zip(_capag_uf["uf"], _capag_uf["capag"]))
+FAIXAS_CAPAG = {COR_STATUS_GOOD: "🟢 A+/A", COR_STATUS_WARNING: "🟡 B+/B", COR_STATUS_CRITICAL: "🔴 C/D"}
+_capag = editais.apply(
+    lambda r: capag_do_orgao(r["codigo_ibge"], r["uf"], MAPA_CAPAG_MUN, MAPA_CAPAG_UF), axis=1
+)
+editais["capag"] = _capag.str[0]
+editais["capag_origem"] = _capag.str[1]
+editais["capag_faixa"] = editais["capag"].apply(lambda n: FAIXAS_CAPAG.get(cor_capag(n), "⚪ Sem dado"))
+
 _total = len(editais)
 # Base sem o toggle — denominador do "% interpretados" (precisa incluir os ⏳).
 editais_base = editais
@@ -105,7 +117,7 @@ if so_info:
 st.caption(f"{len(editais)} de {_total} editais abertos/futuros na base" +
            (" têm item de informática." if so_info else "."))
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c4 = st.columns(3)
 with c1:
     regioes_disp = [r for r in ORDEM_REGIOES if r in set(editais["regiao"].dropna())]
     reg_sel = st.multiselect(
@@ -117,11 +129,6 @@ with c2:
     if "uf_radar_info" in st.session_state:
         st.session_state["uf_radar_info"] = [u for u in st.session_state["uf_radar_info"] if u in ufs_disp]
     uf_sel = st.multiselect("UF", ufs_disp, key="uf_radar_info")
-with c3:
-    selo_sel = st.multiselect(
-        "Selo GET", [s for s, _ in SELOS if s in set(editais["selo"])], key="selo_radar_info",
-        format_func=lambda s: f"{ICONE_SELO[s]} {s}",
-    )
 with c4:
     cats_disp = sorted({c.strip() for cs in editais["categorias"] for c in cs.split(",") if c.strip()})
     cat_sel = st.multiselect("Categoria de produto", cats_disp, key="cat_radar_info")
@@ -144,12 +151,16 @@ with c8:
         help="Mesma pesquisa por portal do radar de pneu (06/ago/2026).",
     )
 with c9:
-    abertura_sel = st.multiselect("Abertura", ["Aberto agora", "🔜 Futuro"], key="abertura_radar_info")
+    capag_sel = st.multiselect(
+        "CAPAG", ["🟢 A+/A", "🟡 B+/B", "🔴 C/D", "⚪ Sem dado"], key="capag_radar_info",
+        help="Capacidade de pagamento do Tesouro (município do órgão, senão estado) — risco de "
+        "calote/atraso depois de vencer. Mesma regra do radar de pneu.",
+    )
 
 
 
 def _filtro_contexto(df: pd.DataFrame) -> pd.DataFrame:
-    """Filtros que não dependem dos itens (geografia, modalidade, portal, abertura)."""
+    """Filtros que não dependem dos itens (geografia, modalidade, portal, CAPAG)."""
     if reg_sel:
         df = df[df["regiao"].isin(reg_sel)]
     if uf_sel:
@@ -162,16 +173,12 @@ def _filtro_contexto(df: pd.DataFrame) -> pd.DataFrame:
         df = df[df["portal"].isin(portal_sel)]
     if custo_sel:
         df = df[df["custo_fornecedor"].isin(custo_sel)]
-    if abertura_sel:
-        quer_futuro = "🔜 Futuro" in abertura_sel
-        quer_aberto = "Aberto agora" in abertura_sel
-        df = df[(df["futuro"] & quer_futuro) | (~df["futuro"] & quer_aberto)]
+    if capag_sel:
+        df = df[df["capag_faixa"].isin(capag_sel)]
     return df
 
 
 editais = _filtro_contexto(editais)
-if selo_sel:
-    editais = editais[editais["selo"].isin(selo_sel)]
 if cat_sel:
     editais = editais[editais["categorias"].apply(lambda s: any(c in s for c in cat_sel))]
 _contexto = _filtro_contexto(editais_base)
@@ -181,7 +188,7 @@ if editais.empty:
     st.stop()
 
 # % interpretados = editais com itens já coletados e classificados, sobre todos os
-# abertos/futuros da mesma região/UF/modalidade/portal (sem o toggle, que esconde os ⏳).
+# abertos/futuros da mesma região/UF/modalidade/portal/CAPAG (sem o toggle, que esconde os ⏳).
 _pct_interp = _contexto["itens_coletados_em"].notna().mean() * 100 if len(_contexto) else 0
 m1, m2 = st.columns(2)
 m1.metric("Editais no filtro", len(editais))
@@ -191,10 +198,6 @@ m2.metric(
     "nesse filtro já tiveram os itens lidos e classificados. O resto (⏳) entra na próxima coleta.",
 )
 
-_capag_mun = carregar_capag_municipios()
-_capag_uf = carregar_capag_estados()
-MAPA_CAPAG_MUN = dict(zip(_capag_mun["codigo_ibge"], _capag_mun["capag"]))
-MAPA_CAPAG_UF = dict(zip(_capag_uf["uf"], _capag_uf["capag"]))
 
 BUCKETS = [
     ("🔴", "Urgente", COR_STATUS_CRITICAL, lambda d: d <= 2),
@@ -290,7 +293,7 @@ def _render_card(row: pd.Series, cor: str) -> None:
         orgao = row["orgao_nome"] + (" 🔁" if contagem_orgao.get(row["orgao_nome"], 0) > 1 else "")
         st.caption(f"**{orgao}** — {row['municipio']}/{row['uf']}")
         st.caption(f"**{ICONE_SELO.get(row['selo'], '')} {row['selo']}**")
-        nota, origem = capag_do_orgao(row["codigo_ibge"], row["uf"], MAPA_CAPAG_MUN, MAPA_CAPAG_UF)
+        nota, origem = row["capag"], row["capag_origem"]
         if nota:
             c = cor_capag(nota)
             ic = "🟢" if c == COR_STATUS_GOOD else "🟡" if c == COR_STATUS_WARNING else "🔴"

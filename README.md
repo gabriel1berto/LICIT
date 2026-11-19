@@ -604,8 +604,8 @@ Sem funil "meu preço x histórico" porque a cotação GET é manual (WhatsApp),
 
 ## Radar (`views/radar_informatica.py`)
 
-Mesma estrutura do Radar de Editais do pneu: filtros Região (padrão Nordeste)/UF/Selo GET/Categoria/
-Modalidade/Regime/Portal/Custo/Abertura, mapa por urgência, CAPAG, Kanban por dia (teto 45 dias +
+Mesma estrutura do Radar de Editais do pneu: filtros Região (padrão Nordeste)/UF/Categoria/
+Modalidade/Regime/Portal/Custo/CAPAG, mapa por urgência, CAPAG, Kanban por dia (teto 45 dias +
 coluna "Vigência longa", 8 cards/dia) e tabela completa. Prazo = `data_fim_vigencia` do search API
 (mesmo proxy do radar de Peças). 🔜 = abertura de proposta ainda no futuro (`data_inicio_vigencia`).
 
