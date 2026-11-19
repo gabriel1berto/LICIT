@@ -648,6 +648,7 @@ informática 4.340→4.249 (−91), todas as classes revisadas. 65 casos em `tes
 | `catalogo_mazer.py` | Mazer Distribuidora: categorias paginadas (`?&pagina=N`) + bloco "Atributos" de cada produto (preço só logado — não coleta) |
 | `criterios.py` | Lê os critérios do item (CATMAT ou texto livre) e da ficha, compara um a um: OK / FALHA / ? (ficha não informa → vendedor confirma; nunca vira "atende") |
 | `casar.py <spreadsheet_id>` | Lê a aba "Cotação" da planilha, escolhe o melhor produto de cada fornecedor por item e escreve as abas "Cotação - GET/TS Shara/Mazer" |
+| `preco_historico.py <spreadsheet_id>` | Preço pago pelo setor público nos últimos 12 meses por item: código CATMAT (PNCP `catalogoCodigoItem`) → API de dados abertos do Compras.gov.br (`modulo-pesquisa-preco/1_consultarMaterial`, mesma base do Painel de Preços). Mediana + P25–P75 com corte de outlier (IQR), nº de compras e marcas que mais venderam. 1ª rodada: 67 de 71 itens com histórico; preço de referência do edital ficou em mediana 1,46× o preço pago |
 
 Saída em `cotacao_informatica/dados/` (gitignorado). Pausa de 1s entre requisições.
 
