@@ -168,3 +168,29 @@ def selo_get(coberturas: list[str]) -> str:
     if any(c in ("sim", "talvez") for c in cob):
         return "Parcial GET"
     return "Fora da GET"
+
+
+# ---- Nível EDITAL (objeto) e sanidade de valor ----
+
+# Objeto de serviço/locação sem compra (achado 19/nov/2026, 1ª coleta Nordeste): Caucaia/CE
+# "prestação continuada de serviços de locação de equipamentos de TI" tinha itens "NOTEBOOK",
+# "MICRO DESKTOP" — é aluguel, não fornecimento. "Monitor de Apoio" era cargo de pessoa.
+_OBJ_SERVICO = re.compile(
+    r"\blocacao|\boutsourcing|\bcomodato|\bprestacao continuada|\bprestacao de servico|\bservicos? continuados", _F)
+_OBJ_COMPRA = re.compile(r"\baquisicao|\bfornecimento de (equipamento|material|nobreak|monitor|computador|periferico)"
+                         r"|\bfornecimento de \w+ (de|para) informatica|\bcompra\b", _F)
+
+
+def objeto_eh_servico(objeto: str | None) -> bool:
+    """Objeto do edital é contratação de serviço/locação, sem compra de bem junto."""
+    texto = _norm(objeto)
+    return bool(_OBJ_SERVICO.search(texto)) and not _OBJ_COMPRA.search(texto)
+
+
+# Mesmo teto do radar de pneu (achado 16/jul/2026): unitário acima disso é lote, mês de
+# locação ou erro de digitação — nenhum periférico GET passa perto (nobreak 3kVA < R$5 mil).
+TETO_VALOR_UNITARIO = 50_000.0
+
+
+def item_valido_valor(valor_unitario: float | None) -> bool:
+    return valor_unitario is None or valor_unitario != valor_unitario or valor_unitario <= TETO_VALOR_UNITARIO

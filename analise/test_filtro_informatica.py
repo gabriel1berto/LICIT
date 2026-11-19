@@ -1,7 +1,7 @@
 """Testes do filtro_informatica.py — descrições no formato real do PNCP."""
 import pytest
 
-from filtro_informatica import classificar_item, selo_get
+from filtro_informatica import classificar_item, item_valido_valor, objeto_eh_servico, selo_get
 
 CASOS = [
     ("NOBREAK 1500VA BIVOLT COM 6 TOMADAS", "Nobreak", "sim"),
@@ -65,3 +65,29 @@ def test_selo():
     assert selo_get(["sim", "nao"]) == "Parcial GET"
     assert selo_get(["nao"]) == "Fora da GET"
     assert selo_get([None]) == "Sem item de informática"
+
+
+# Objeto do edital é serviço/locação (achado 19/nov/2026, 1ª coleta Nordeste): item
+# "NOTEBOOK" num edital de locação de TI não é compra; "Monitor de Apoio" é cargo.
+OBJETOS = [
+    ("REGISTRO DE PREÇOS PARA FUTURA E EVENTUAL CONTRATAÇÃO DE EMPRESA(S) ESPECIALIZADA(S) PARA PRESTAÇÃO "
+     "CONTINUADA DE SERVIÇOS DE LOCAÇÃO DE EQUIPAMENTOS DE TECNOLOGIA DA INFORMAÇÃO", True),
+    ("Contratação, com vigência inicial de 4 (quatro) anos, de serviços de outsourcing de impressão", True),
+    ("Credenciamento de pessoas físicas e/ou MEI para a prestação de serviços de Monitor de Apoio ao Transporte", True),
+    ("AQUISIÇÃO DE EQUIPAMENTOS DE INFORMÁTICA PARA AS SECRETARIAS MUNICIPAIS", False),
+    ("Registro de preços para aquisição de material de informática e prestação de serviço de instalação", False),
+    ("SRP PARA CONTRATAÇÃO DE EMPRESA PARA FORNECIMENTO DE NOBREAKS E ESTABILIZADORES", False),
+    ("", False),
+]
+
+
+@pytest.mark.parametrize("objeto,esperado", OBJETOS)
+def test_objeto_servico(objeto, esperado):
+    assert objeto_eh_servico(objeto) is esperado
+
+
+def test_valor_unitario_absurdo_nao_conta():
+    # "NOTEBOOK I5" a R$871 mil/un (Caucaia/CE) — lote ou erro de digitação, mesmo teto do pneu
+    assert item_valido_valor(871274.25) is False
+    assert item_valido_valor(4500.0) is True
+    assert item_valido_valor(None) is True

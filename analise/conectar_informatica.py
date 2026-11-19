@@ -12,7 +12,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-from filtro_informatica import classificar_item, selo_get
+from filtro_informatica import classificar_item, item_valido_valor, objeto_eh_servico, selo_get
 
 load_dotenv()
 
@@ -38,10 +38,12 @@ def _datas(serie: pd.Series) -> pd.Series:
 def carregar_itens_informatica() -> pd.DataFrame:
     df = pd.read_sql_query(
         f"""
-        SELECT numero_controle_pncp, numero_item, descricao, quantidade, unidade_medida,
-               valor_unitario_estimado, valor_total, material_ou_servico, beneficio_nome
-        FROM informatica.itens
-        WHERE numero_controle_pncp IN (
+        SELECT i.numero_controle_pncp, i.numero_item, i.descricao, i.quantidade, i.unidade_medida,
+               i.valor_unitario_estimado, i.valor_total, i.material_ou_servico, i.beneficio_nome,
+               COALESCE(e.descricao, e.titulo) AS objeto_edital
+        FROM informatica.itens i
+        JOIN informatica.editais e USING (numero_controle_pncp)
+        WHERE i.numero_controle_pncp IN (
             SELECT numero_controle_pncp FROM informatica.editais WHERE {_FILTRO_ABERTO}
         )
         """,
@@ -52,6 +54,12 @@ def carregar_itens_informatica() -> pd.DataFrame:
     cls = df["descricao"].apply(classificar_item)
     df["categoria"] = cls.str[0]
     df["cobertura_get"] = cls.str[1]
+    # Item deixa de contar como informática quando o EDITAL é serviço/locação ou o unitário
+    # é absurdo (lote/erro) — ver filtro_informatica.py. Fica na base, só sem categoria.
+    servico = df["objeto_edital"].apply(objeto_eh_servico)
+    valor_ruim = ~df["valor_unitario_estimado"].apply(item_valido_valor)
+    descarta = servico | valor_ruim
+    df.loc[descarta, ["categoria", "cobertura_get"]] = None
     # valorTotal às vezes vem 0 com unitário preenchido — recalcula pra não sumir valor
     vt = df["valor_total"].where(df["valor_total"] > 0, df["valor_unitario_estimado"] * df["quantidade"])
     df["valor_item"] = vt.fillna(0)
@@ -72,6 +80,14 @@ def carregar_editais_informatica(itens: pd.DataFrame | None = None) -> pd.DataFr
     )
     if df.empty:
         return df
+
+    # Retificação/republicação: PNCP gera numero_controle novo pro mesmo processo (achado
+    # 19/nov/2026: Caucaia/CE 196 e 197 idênticos). Mesmo órgão + mesmo prazo + mesmo valor
+    # = mesmo edital; fica o de número maior (mais recente). Sem valor, não dá pra afirmar.
+    df = df.sort_values("numero_controle_pncp", ascending=False)
+    com_valor = df["valor_total_estimado"].fillna(0) > 0
+    dup = df[com_valor].duplicated(["orgao_cnpj", "data_fim_vigencia", "valor_total_estimado"])
+    df = df.drop(dup[dup].index)
 
     df["data_fim_vigencia"] = _datas(df["data_fim_vigencia"]).fillna(pd.Timestamp("2200-01-01"))
     df["data_inicio_vigencia"] = _datas(df["data_inicio_vigencia"])

@@ -626,3 +626,10 @@ do texto, "Computador Portátil (Notebook)" (CATMAT), monitor de uso médico, pr
 "Fonte Alimentação Ininterrupta" (nome CATMAT de nobreak), formato "tamanho tela: 25", HTML na descrição.
 48 casos em `test_filtro_informatica.py`. Rodada de auto-aperfeiçoamento: mesmo processo comum (Parte 1).
 
+Calibração 19/nov/2026 #2 (1ª coleta completa do Nordeste, 677 editais): 3 regras novas, testadas e
+medidas antes de aplicar — (1) objeto do edital de serviço/locação sem compra descarta os itens (locação
+de TI em Caucaia/Ipojuca, outsourcing de impressão, "serviços de Monitor de Apoio" = cargo); (2) unitário
+acima de R$50 mil não conta (mesmo teto do pneu; "notebook" a R$871 mil/un); (3) retificação republicada
+(mesmo órgão + prazo + valor) deduplicada. Nordeste antes→depois: 677→664 editais, com informática
+227→212, 100% GET 100→92, valor informática R$156→80 mi. 56 casos em `test_filtro_informatica.py`.
+
