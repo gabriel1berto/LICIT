@@ -639,3 +639,27 @@ Calibração 19/nov/2026 #3 (planilha de cotação, itens que não eram produto 
 regressão pega no teste), caixa passiva, "Monitor Imagem" ≥40" (TV/painel). Medido na base inteira (156.368 itens):
 informática 4.340→4.249 (−91), todas as classes revisadas. 65 casos em `test_filtro_informatica.py`.
 
+## Cotação — catálogo dos fornecedores x critérios do edital (`cotacao_informatica/`, 19/nov/2026)
+
+| Script | O que faz |
+|---|---|
+| `catalogo_get.py` | GET: lista de SKUs embutida no portal do revendedor (`app.ibyte.com.br/get-catalog/`, sem preço) + tabela "ESPECIFICAÇÕES TÉCNICAS" de cada SKU |
+| `catalogo_tsshara.py` | TS Shara: API WordPress `/wp-json/wp/v2/product` + ficha de cada nobreak/estabilizador |
+| `catalogo_mazer.py` | Mazer Distribuidora: categorias paginadas (`?&pagina=N`) + bloco "Atributos" de cada produto (preço só logado — não coleta) |
+| `criterios.py` | Lê os critérios do item (CATMAT ou texto livre) e da ficha, compara um a um: OK / FALHA / ? (ficha não informa → vendedor confirma; nunca vira "atende") |
+| `casar.py <spreadsheet_id>` | Lê a aba "Cotação" da planilha, escolhe o melhor produto de cada fornecedor por item e escreve as abas "Cotação - GET/TS Shara/Mazer" |
+
+Saída em `cotacao_informatica/dados/` (gitignorado). Pausa de 1s entre requisições.
+
+Ranqueamento: menos FALHA → menos "?" → mais OK → sem linha gamer (se o item não pede) → mais perto do mínimo pedido.
+Faixa CATMAT tipo "SSD 110 a 300" / "RAM 4 a 8": produto acima do teto vira "?" (superior, confirmar no TR), não
+FALHA; tela "até 14" continua rígida. Nobreak "saída 110/220" é ambíguo no CATMAT → "?" (conferir se exige bivolt).
+
+Bugs pegos testando contra os itens reais antes de escrever (19/nov/2026): "Altura (bruto)" (caixa) lido como
+ajuste de altura do monitor; polegada com ´´/’’ sumia no NFKD; "mini nobreak p/ roteador" e mini PC sem RAM/SSD
+ganhando por ficha incompleta; "tomadas saída: 4" lido como tensão de saída; núcleos de CPU lidos de "6P+4E" /
+"2NU" (nunca pelo nome i5/i7); Chromebook passando em item que pede Windows.
+
+1ª rodada (71 itens, 40 dispensas): melhor fornecedor por item → ✅ 32 · ⚠️ 24 · ❌ 4 · ⛔ 11 (fora de escopo).
+
+

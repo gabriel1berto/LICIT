@@ -448,6 +448,12 @@ parceiro feito 19/nov/2026. Cotação manual: escolher produto no catálogo
 portal B2B com preço. Linhas que a GET **não** tem: webcam, estabilizador, notebook, impressora.
 Status dos demais fornecedores de periférico: memória do assistente (estado vivo, muda rápido).
 
+**Outros catálogos usados na cotação (19/nov/2026):** TS Shara (fabricante de nobreak/estabilizador — tem a
+linha bivolt/saída selecionável que a GET não tem; catálogo tsshara.com.br, cota por WhatsApp) e **Mazer
+Distribuidora** (mazer.com.br — distribuidor amplo: notebook, PC, impressora, webcam, monitor; preço só com
+login). Fluxo: levantar o produto que atende cada item com link e mandar a lista pro vendedor. Cruzamento
+automático item x catálogo: `cotacao_informatica/` (detalhe técnico em `README.md` Parte 4).
+
 **Fluxo (mesmo funil do pneu, manual primeiro — regra §7.8):** Radar (`💻 Informática` no
 dashboard, detalhe técnico em `README.md` Parte 4) → card Notion no mesmo Kanban → skill
 `analise-de-edital` (colunas Construção/IC-IV/Lonas ficam vazias, sem redesign — regra §7.9) →
