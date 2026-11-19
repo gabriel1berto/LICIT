@@ -52,6 +52,16 @@ CASOS = [
     ("Câmera Videoconferência características adicionais: webcam", "Webcam", "nao"),
     ("Microcomputador memória ram: superior a 8", "Computador", "talvez"),
     ("Memória Portátil Microcomputador capacidade memória: 128, interface: usb", "Armazenamento", "sim"),
+    # achados 19/nov/2026 ao montar a planilha de cotação (itens que não são produto de informática)
+    ("Aspirador Pó - Microcomputador potência: 60, voltagem: 110/220, características adicionais: aspirador e soprador", None, None),
+    ("Fita Impressora material: resina, tipo impressora: fargo", None, None),
+    ("Bobina Papel Impressora tipo papel: térmico, comprimento: 40, largura: 80", None, None),
+    ("Peça / Acessório - Impressora / Copiadora, Tipo 3:Caixa Seca De Filamento, Aplicação 1:Impressora 3d", None, None),
+    ("PEDESTAL CAIXA ACÚSTICA ALTURA: ABERTO MÁX. 1,90M", None, None),
+    ("Caixa Acústica tipo: passiva, potência: 275 watts rms a 8 ohms, tamanho alto-falante: 12", None, None),
+    ("Microfone tipo: lapela/headset, resposta freqüência: 40 hz a 18, tipo receptor: uhf", None, None),
+    ("Apoio Punho Teclado material: espuma de poliuretano de baixa densidade", None, None),
+    ("Monitor Imagem tamanho tela: 55, tipo tela: led, resolução imagem: 3840 x 2160", None, None),
 ]
 
 

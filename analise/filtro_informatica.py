@@ -42,7 +42,12 @@ _EXCLUI = re.compile(
     r"|glicose|glicemi|holter|\bmapa\b|cardiotoc|\buti\b|anestesi|uso medico|cirurgi|mamograf|optotipo"
     r"|teclado (musical|arranjador|eletronico)|\bpiano"
     r"|suporte (para|p/|de) (monitor|projetor|tv)|\btela de projecao|\btela retratil|\bcabo\b|\bcapa\b|\bpelicula"
-    r"|\bmouse ?pad|\blampada (para|p/|de) projetor|\bcontrole remoto",
+    r"|\bmouse ?pad|\blampada (para|p/|de) projetor|\bcontrole remoto"
+    # achados 19/nov/2026 (planilha de cotação): insumo/acessório/áudio profissional que
+    # citava termo de informática no começo da descrição
+    r"|\baspirador|\bfita impressora|\bbobina|^\W*filamento|\bpeca / acessorio|\bpedestal|\bapoio (de )?punho"
+    # microfone só no início: "headset/webcam com microfone" é informática (regressão pega no teste)
+    r"|^\W*microfone|\btipo: passiva\b|\bmonitor imagem tamanho tela: [4-9]\d",
     _F,
 )
 

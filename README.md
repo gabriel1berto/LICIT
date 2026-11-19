@@ -633,3 +633,9 @@ acima de R$50 mil não conta (mesmo teto do pneu; "notebook" a R$871 mil/un); (3
 (mesmo órgão + prazo + valor) deduplicada. Nordeste antes→depois: 677→664 editais, com informática
 227→212, 100% GET 100→92, valor informática R$156→80 mi. 56 casos em `test_filtro_informatica.py`.
 
+Calibração 19/nov/2026 #3 (planilha de cotação, itens que não eram produto de informática): exclui aspirador
+"- Microcomputador", fita/bobina de impressora, peça/acessório de impressora, filamento (só no início — impressora
+3D continua Impressora), pedestal, apoio de punho, microfone (só no início — "headset com microfone" continua;
+regressão pega no teste), caixa passiva, "Monitor Imagem" ≥40" (TV/painel). Medido na base inteira (156.368 itens):
+informática 4.340→4.249 (−91), todas as classes revisadas. 65 casos em `test_filtro_informatica.py`.
+
