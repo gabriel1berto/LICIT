@@ -92,6 +92,8 @@ editais["portal"] = editais["portal_dominio"].apply(portal_de)
 editais["custo_fornecedor"] = editais["portal_dominio"].apply(custo_fornecedor)
 
 _total = len(editais)
+# Base sem o toggle — denominador do "% interpretados" (precisa incluir os ⏳).
+editais_base = editais
 so_info = st.toggle(
     "Só editais com item de informática confirmado", value=True, key="so_info_radar_info",
     help="A busca do PNCP acha o termo em qualquer lugar (anexo, item de outra coisa). Ligado, "
@@ -144,38 +146,50 @@ with c8:
 with c9:
     abertura_sel = st.multiselect("Abertura", ["Aberto agora", "🔜 Futuro"], key="abertura_radar_info")
 
-if reg_sel:
-    editais = editais[editais["regiao"].isin(reg_sel)]
-if uf_sel:
-    editais = editais[editais["uf"].isin(uf_sel)]
+
+
+def _filtro_contexto(df: pd.DataFrame) -> pd.DataFrame:
+    """Filtros que não dependem dos itens (geografia, modalidade, portal, abertura)."""
+    if reg_sel:
+        df = df[df["regiao"].isin(reg_sel)]
+    if uf_sel:
+        df = df[df["uf"].isin(uf_sel)]
+    if mod_sel:
+        df = df[df["modalidade_licitacao_nome"].isin(mod_sel)]
+    if regime_sel:
+        df = df[df["regime"].isin(regime_sel)]
+    if portal_sel:
+        df = df[df["portal"].isin(portal_sel)]
+    if custo_sel:
+        df = df[df["custo_fornecedor"].isin(custo_sel)]
+    if abertura_sel:
+        quer_futuro = "🔜 Futuro" in abertura_sel
+        quer_aberto = "Aberto agora" in abertura_sel
+        df = df[(df["futuro"] & quer_futuro) | (~df["futuro"] & quer_aberto)]
+    return df
+
+
+editais = _filtro_contexto(editais)
 if selo_sel:
     editais = editais[editais["selo"].isin(selo_sel)]
 if cat_sel:
     editais = editais[editais["categorias"].apply(lambda s: any(c in s for c in cat_sel))]
-if mod_sel:
-    editais = editais[editais["modalidade_licitacao_nome"].isin(mod_sel)]
-if regime_sel:
-    editais = editais[editais["regime"].isin(regime_sel)]
-if portal_sel:
-    editais = editais[editais["portal"].isin(portal_sel)]
-if custo_sel:
-    editais = editais[editais["custo_fornecedor"].isin(custo_sel)]
-if abertura_sel:
-    quer_futuro = "🔜 Futuro" in abertura_sel
-    quer_aberto = "Aberto agora" in abertura_sel
-    editais = editais[(editais["futuro"] & quer_futuro) | (~editais["futuro"] & quer_aberto)]
+_contexto = _filtro_contexto(editais_base)
 
 if editais.empty:
     st.warning("Nenhum edital bate esses filtros.")
     st.stop()
 
-# Resumo do filtro — quanto dá pra atender só com GET.
-_get = editais[editais["selo"] == "100% GET"]
-m1, m2, m3, m4 = st.columns(4)
+# % interpretados = editais com itens já coletados e classificados, sobre todos os
+# abertos/futuros da mesma região/UF/modalidade/portal (sem o toggle, que esconde os ⏳).
+_pct_interp = _contexto["itens_coletados_em"].notna().mean() * 100 if len(_contexto) else 0
+m1, m2 = st.columns(2)
 m1.metric("Editais no filtro", len(editais))
-m2.metric("🟢 100% GET", len(_get))
-m3.metric("Valor 100% GET", f"R$ {fmt_abrev(_get['valor_get'].sum())}")
-m4.metric("🔜 Futuros", int(editais["futuro"].sum()))
+m2.metric(
+    "% de editais interpretados", f"{_pct_interp:.0f}%",
+    help=f"{int(_contexto['itens_coletados_em'].notna().sum())} de {len(_contexto)} editais abertos/futuros "
+    "nesse filtro já tiveram os itens lidos e classificados. O resto (⏳) entra na próxima coleta.",
+)
 
 _capag_mun = carregar_capag_municipios()
 _capag_uf = carregar_capag_estados()
