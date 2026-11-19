@@ -24,6 +24,7 @@ Uso:
     python coletor_informatica.py --termo Nobreak  # só 1 termo (teste)
     python coletor_informatica.py --so-itens        # pula a busca
     python coletor_informatica.py --max-itens 200   # teto de editais na etapa 2
+    python coletor_informatica.py --so-itens --ufs CE,PE,BA  # prioriza UFs nos itens
 """
 
 import argparse
@@ -188,7 +189,7 @@ def buscar_itens(cnpj: str, ano: str, seq: str) -> list[dict] | None:
         time.sleep(PAUSA_ENTRE_ITENS)
 
 
-def coletar_itens(con, cur, max_editais: int | None) -> None:
+def coletar_itens(con, cur, max_editais: int | None, ufs: list[str] | None = None) -> None:
     cur.execute("""
         SELECT numero_controle_pncp, orgao_cnpj, ano, numero_sequencial
         FROM informatica.editais
@@ -196,8 +197,9 @@ def coletar_itens(con, cur, max_editais: int | None) -> None:
           AND COALESCE(cancelado, FALSE) = FALSE
           AND COALESCE(modalidade_licitacao_nome, '') NOT ILIKE 'Leil%%'
           AND data_fim_vigencia > to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD"T"HH24:MI')
+          AND (%(ufs)s IS NULL OR uf = ANY(%(ufs)s))
         ORDER BY data_fim_vigencia
-    """ + (f" LIMIT {int(max_editais)}" if max_editais else ""))
+    """ + (f" LIMIT {int(max_editais)}" if max_editais else ""), {"ufs": ufs})
     pendentes = cur.fetchall()
     print(f"Itens: {len(pendentes)} edital(is) pendente(s)", flush=True)
     for i, (ncp, cnpj, ano, seq) in enumerate(pendentes, 1):
@@ -232,13 +234,15 @@ def main():
     ap.add_argument("--termo", help="rodar só 1 termo (teste)")
     ap.add_argument("--so-itens", action="store_true", help="pula a busca, só coleta itens pendentes")
     ap.add_argument("--max-itens", type=int, help="teto de editais na etapa de itens")
+    ap.add_argument("--ufs", help="só itens dessas UFs, ex: CE,PE,BA (prioriza uma região na carga)")
     args = ap.parse_args()
 
     con, cur = conectar_db()
     if not args.so_itens:
         coletar_busca(con, cur, [args.termo] if args.termo else TERMOS)
     try:
-        coletar_itens(con, cur, args.max_itens)
+        ufs = [u.strip().upper() for u in args.ufs.split(",")] if args.ufs else None
+        coletar_itens(con, cur, args.max_itens, ufs)
     except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
         # conexão longa com o Supabase cai às vezes — o que já foi gravado fica (commit
         # por edital), o resto entra na próxima rodada.
