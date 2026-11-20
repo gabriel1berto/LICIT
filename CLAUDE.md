@@ -508,7 +508,18 @@ protege contra edição acidental, não contra quem tem acesso à máquina (qual
    marcar "Sim" na declaração ME/EPP padrão (LC 123 art. 3º) e no Termo de Aceitação padrão (condições de
    participação, habilitação, reserva PcD/aprendiz, art. 7º XXXIII) — texto diferente disso: consultar antes.
 4. Itens paginados de 10 em 10: a extensão só enxerga a página aberta — rodar uma vez por página.
-5. **Ler o aviso (PDF) antes de cotar:** o resumo do PNCP corta a especificação. Caso real 202/2026: PNCP dizia
+   Busca de compras também pagina (10 por página): em UASG grande, preencher "Número da compra" (máscara
+   5 dígitos + ano, ex. 262/2026 → `002622026`).
+   **Favoritar (coração) as compras da semana = forma de organizar as participações (usuário, 20/nov/2026).**
+   Favorito não aparece em "Minhas participações" (só lista compra com termo aceito) nem tem filtro na web —
+   a lista de favoritos é vista no **app Compras.gov.br**. Favoritar não registra participação.
+   `favoritar()` em `extensao_compras/tools/sondar_compras.js`.
+5. **Planilha de cotação: TODO dado do item vem do edital (decisão do usuário, 20/nov/2026)** — especificação
+   técnica, qtde, unidade, preço de referência, local/CEP, prazos, exigências (catálogo, garantia, marca de
+   referência). PNCP/API só como índice pra achar o edital; se o edital não trouxer o dado, a célula diz
+   "não consta no edital" (nunca preencher com o resumo do PNCP sem marcar a fonte). Motivo: na planilha de
+   20/nov, 19 de 71 itens diziam no próprio PNCP que a especificação real estava no TR/aviso.
+   Ler o aviso (PDF) antes de cotar: o resumo do PNCP corta a especificação. Caso real 202/2026: PNCP dizia
    "projetor interativo"; o aviso pede Epson PowerLite L210-SF laser/curta distância — GET não atende.
 6. Lances na dispensa: das 08h às 18h do dia da sessão, encerramento fixo, valor unitário, intervalo do aviso
    (ex. R$ 0,50). Valor mínimo automático só "se disponibilizado no sistema" — não estava na tela.
