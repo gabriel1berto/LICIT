@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "B2G — Preenchedor de Proposta (Compras.gov.br)",
+  "version": "0.1.0",
+  "description": "Preenche valor, valor mínimo, marca, fabricante e modelo a partir da ficha aprovada. Nunca salva nem envia.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://cnetmobile.estaleiro.serpro.gov.br/*",
+    "https://*.compras.gov.br/*",
+    "https://www.comprasnet.gov.br/*"
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Preencher proposta" }
+}

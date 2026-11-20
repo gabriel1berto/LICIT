@@ -454,6 +454,51 @@ Distribuidora** (mazer.com.br — distribuidor amplo: notebook, PC, impressora, 
 login). Fluxo: levantar o produto que atende cada item com link e mandar a lista pro vendedor. Cruzamento
 automático item x catálogo: `cotacao_informatica/` (detalhe técnico em `README.md` Parte 4).
 
+**Proposta e lances no Compras.gov.br (F0, fixada 20/nov/2026):** 58 de 60 dispensas de informática
+da semana 23-29/nov rodam no Compras.gov.br, que tem robô de lances nativo e gratuito (IN 67/2021
+dispensa · IN 73/2022 pregão). Regra: **toda proposta lá sai com o campo "Valor mínimo" preenchido**
+com o piso da ficha (F1); valor inicial = preço de referência do edital. Piso = COGS UN (fórmula §5,
+imposto 6%) × (1 + margem mínima — ver "Margens" abaixo), arredondado pra cima no
+centavo. Piso acima da referência = item inviável, não entra. Robô nativo não cobre a etapa fechada
+(modo aberto-fechado): lance final é manual, alguém online na sessão. Nada de robô de terceiro,
+burla de captcha ou senha guardada. A ficha por edital é gerada por `cotacao_informatica/ficha_proposta.py`
+a partir da aba "Cotação" (colunas do fornecedor); nunca com valor inventado. Travas (20/nov/2026):
+- **Item:** PENDENTE se faltar Atende="Sim", preço, marca/modelo, qtde ou **frete** (vazio ≠ zero; escrever
+  0 se incluso) · INVIÁVEL se piso > referência · **BLOQUEADO** se preço suspeito (custo < 20% da
+  referência ou piso < 40% da mediana paga em 12m — erro de digitação), só libera com aceite explícito
+  na aprovação · DUPLICADO se o nº do item repetir no edital.
+- **Ficha:** não fica pronta se o edital já encerrou (EXPIRADA) ou se a "Validade da cotação" (B6) estiver
+  vazia, vencida ou antes do encerramento. Margem mínima só entre 0 e 50%.
+- **Aprovação humana obrigatória:** a ficha só serve pra proposta depois de `--aprovar`, que grava um hash
+  dos campos da proposta. Qualquer mudança na planilha ou na margem depois disso revoga a aprovação
+  sozinha. O consumidor (F2) só aceita ficha pronta + aprovada + hash íntegro (`verificar_ficha()`).
+- **Checklist F0 em cada ficha:** depois de salvar a proposta, reabrir e conferir cada valor mínimo dígito a
+  dígito contra a ficha; alguém online pro lance fechado; olho no chat do pregoeiro.
+**Margens (usuário, 20/nov/2026):** margem-alvo **30%** (vale como valor inicial só quando o edital não tem
+preço de referência); margem mínima **20%** provisória, até o usuário fixar o número definitivo.
+
+**F2 — extensão de Chrome `extensao_compras/` (v0.1, 20/nov/2026):** preenche valor unitário, valor mínimo,
+marca, fabricante e modelo a partir do pacote exportado (`ficha_proposta.py --exportar`, só sai de ficha
+pronta + aprovada). Regras duras: **nunca clica em Salvar/Enviar** (não existe código de clique; quem
+salva e envia é o usuário); só roda quando o usuário clica (sem script automático em página do governo);
+recusa pacote com checksum diferente, expirado ou com mínimo > inicial; recusa página que não seja da
+UASG + nº da compra do pacote, ou que cite mais de uma compra; recusa página de critério **maior
+desconto** ou de lance por **valor total/global** com item de qtde > 1 (o pacote é unitário em R$);
+só liga rótulo a campo por vínculo forte (label[for], input dentro do rótulo, ou único campo do bloco
+vindo depois do rótulo) — sem vínculo, avisa e não chuta; rótulo com total/global/desconto/estimado/
+referência/quantidade nunca é preenchido; dois campos iguais pro mesmo item = não preenche nenhum;
+não sobrescreve campo já preenchido sem marcar a opção; confere tudo lendo a tela de volta e marca
+verde/vermelho; campo "valor mínimo" não achado vira aviso pra preencher à mão. O checksum do pacote
+protege contra edição acidental, não contra quem tem acesso à máquina (qualquer um recalcula SHA-256).
+**Status: testada só em página simulada — o DOM real do Compras.gov.br ainda não foi visto.**
+Antes do 1º uso real, rodar "Diagnosticar" na tela de proposta (logado) e calibrar os rótulos.
+
+**Ponto aberto de fórmula (revisão 20/nov/2026, NÃO alterado — decisão do usuário, regra §5):** o imposto
+de 6% da §5 incide sobre o preço de **compra**; no Simples Nacional o imposto incide sobre a **venda**
+(faturamento). Com piso = custo × 1,06 × 1,20 = custo × 1,272, o imposto real é 6% × 1,272 ≈ 7,6% do
+custo (não 6%) → sobra ~1,6% do custo a menos que o previsto no piso. Venda interestadual (CE → outra UF)
+pode ter DIFAL/ICMS-ST — confirmar com a contadora.
+
 **Fluxo (mesmo funil do pneu, manual primeiro — regra §7.8):** Radar (`💻 Informática` no
 dashboard, detalhe técnico em `README.md` Parte 4) → card Notion no mesmo Kanban → skill
 `analise-de-edital` (colunas Construção/IC-IV/Lonas ficam vazias, sem redesign — regra §7.9) →

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Fixture — cadastro de proposta (layout simulado, NÃO é o DOM real do Compras.gov.br)</title></head>
+<body>
+  <h2>UASG 791190 - CENTRO DE INSTRUCAO E ADESTRAMENTO AERONAVAL</h2>
+  <h3>Dispensa Eletrônica Nº 00202/2026</h3>
+
+  <div class="item-card">
+    <h4>Item 2 - Projetor Multimídia</h4>
+    <div class="campo"><label for="vu2">Valor unitário (R$)</label><input id="vu2" class="moeda"></div>
+    <div class="campo"><label>Valor final mínimo</label><input class="moeda" formcontrolname="valorMinimo"></div>
+    <div class="campo"><span>Marca</span><input formcontrolname="marca"></div>
+    <div class="campo"><span>Fabricante</span><input formcontrolname="fabricante"></div>
+    <div class="campo"><span>Modelo / Versão</span><input formcontrolname="modelo" value="ANTIGO"></div>
+    <button onclick="window.__cliques.push('salvar 2')">Salvar item</button>
+  </div>
+
+  <div class="item-card">
+    <h4>Item 3 - Projetor (fora da ficha)</h4>
+    <div class="campo"><label for="vu3">Valor unitário (R$)</label><input id="vu3" class="moeda"></div>
+    <div class="campo"><span>Marca</span><input></div>
+  </div>
+
+  <button onclick="window.__cliques.push('enviar')">Enviar proposta</button>
+
+  <script>
+    window.__cliques = [];
+    // máscara de moeda estilo "dígitos da direita pra esquerda" (comum em Angular)
+    for (const el of document.querySelectorAll("input.moeda")) {
+      el.addEventListener("input", () => {
+        const d = el.value.replace(/\D/g, "").replace(/^0+/, "") || "0";
+        const n = (Number(d) / 100).toFixed(2).split(".");
+        el.value = n[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + n[1];
+      });
+    }
+  </script>
+</body>
+</html>

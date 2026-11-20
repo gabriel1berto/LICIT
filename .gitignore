@@ -5,6 +5,7 @@ gp_cookies.json
 *.json
 !package.json
 !medidas_prioritarias.json
+!extensao_compras/manifest.json
 dados/*/*.csv
 analise/pncp_raw.db
 dados_capag/

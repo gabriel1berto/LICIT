@@ -650,8 +650,31 @@ informática 4.340→4.249 (−91), todas as classes revisadas. 65 casos em `tes
 | `casar.py <spreadsheet_id>` | Lê a aba "Cotação" da planilha, escolhe o melhor produto de cada fornecedor por item e escreve as abas "Cotação - GET/TS Shara/Mazer" |
 | `preco_historico.py <spreadsheet_id>` | Preço pago pelo setor público nos últimos 12 meses por item: código CATMAT (PNCP `catalogoCodigoItem`) → API de dados abertos do Compras.gov.br (`modulo-pesquisa-preco/1_consultarMaterial`, mesma base do Painel de Preços). Mediana + P25–P75 com corte de outlier (IQR), nº de compras e marcas que mais venderam. 1ª rodada: 67 de 71 itens com histórico; preço de referência do edital ficou em mediana 1,46× o preço pago |
 | `prazos_pagamento.py <spreadsheet_id>` | Lê dos documentos do edital (mesma extração do `analisa_edital.py`) prazo de entrega, recebimento definitivo e prazo de pagamento; grava "Data estimada de pagamento" = encerramento + 5 dias úteis (empenho, premissa) + entrega + recebimento + pagamento. Prazo que o edital não diz vira premissa escrita na célula. 1ª rodada: pagamentos entre 31/12/2026 e 26/02/2027 |
+| `ficha_proposta.py <spreadsheet_id> [--margem-minima 0.20] [--dry-run]` · `--aprovar <cnpj-ano-seq> [--aceitar-suspeito <item>…]` · `--exportar <cnpj-ano-seq>` | F1 da proposta no Compras.gov.br: lê a aba "Cotação" (colunas do fornecedor + validade da cotação em B6) e grava uma ficha JSON por edital em `dados/fichas/<cnpj>-<ano>-<seq>.json` com valor inicial, **valor mínimo** (piso do robô nativo), marca, fabricante, modelo e checklist F0. Status do item: PRONTO / PENDENTE / BLOQUEADO / INVIAVEL / DUPLICADO; bloqueios da ficha: expirada, validade da cotação. Aprovação humana grava hash em `dados/fichas/aprovacoes.json` (mudança na planilha revoga); `verificar_ficha()` é a trava pro consumidor. `--exportar` (só ficha aprovada) consulta o PNCP (`api/consulta/v1`, grátis) pra UASG / nº da compra / id do Compras.gov.br e grava `dados/fichas/pacote_<chave>.json` com checksum SHA-256 do texto canônico (`canonico_pacote()`, mesma fórmula de `extensao_compras/lib.js`) — custo do fornecedor não vai no pacote. Escrita atômica. Regras, margens e limiares: CLAUDE.md §19. Testes: `python -m pytest -p no:dash test_ficha_proposta.py` (56 casos; checagem de mutação 20/nov/2026: desligar cada trava derruba ≥1 teste). 1ª rodada 20/nov/2026: 40 editais, 71 itens, todos PENDENTE (colunas do fornecedor e validade ainda vazias) |
 
 Saída em `cotacao_informatica/dados/` (gitignorado). Pausa de 1s entre requisições.
+
+## Extensão de proposta — `extensao_compras/` (F2, v0.1, 20/nov/2026)
+
+Extensão Chrome (Manifest V3) que preenche a proposta no Compras.gov.br a partir do `pacote_<chave>.json`.
+Regras de uso e travas: CLAUDE.md §19.
+
+| Arquivo | O que faz |
+|---|---|
+| `manifest.json` | Permissões mínimas: `activeTab`, `scripting`, `storage`; hosts `cnetmobile.estaleiro.serpro.gov.br`, `*.compras.gov.br`, `www.comprasnet.gov.br`. Sem content script automático — só injeta quando você clica |
+| `lib.js` | Funções puras (sem DOM): verificação do pacote (checksum, expiração, consistência), identificação da página (id da compra na URL ou UASG + nº/ano no texto), rótulo → campo, plano de preenchimento, conferência de leitura de volta |
+| `content.js` | Acha os campos por rótulo (label/span/placeholder) e liga cada um ao item pelo menor bloco que cita um único "Item N". Ações: Diagnosticar e Simular (só leem), Preencher (digita via `insertText`, cai pro setter nativo se a máscara não aceitar, lê de volta, contorna verde/vermelho). Não contém nenhum clique |
+| `popup.html` / `popup.js` | Carrega o pacote, mostra itens/valores, botões, checkbox "Conferi" obrigatório pra liberar Preencher, botão "Copiar diagnóstico" |
+
+Instalar: `chrome://extensions` → Modo do desenvolvedor → Carregar sem compactação → pasta `extensao_compras/`.
+
+Testes: `node --test extensao_compras/test/lib.test.js` (17 — inclui checksum calculado pelo Python batendo
+com o JS) e `python -m pytest -p no:dash extensao_compras/test/test_content_fixture.py` (16 — Chromium real
+contra `test/fixture_proposta.html`, layout **simulado** com máscara de moeda e botões Salvar/Enviar-armadilha;
+prova que não clica, não chuta campo sem vínculo forte, recusa maior desconto / valor total / página com
+várias compras / reinjeção). Checagem de mutação 20/nov/2026: cada trava desligada derruba ≥1 teste (a de
+"bloco com 2 campos" é redundante com o limite de 2 níveis — mutação equivalente). Caminho de fallback
+"setter" (quando a máscara rejeita `insertText`) não tem teste. **Não testada no DOM real do Compras.gov.br** — calibrar com "Diagnosticar" antes do 1º uso.
 
 Ranqueamento: menos FALHA → menos "?" → mais OK → sem linha gamer (se o item não pede) → mais perto do mínimo pedido.
 Faixa CATMAT tipo "SSD 110 a 300" / "RAM 4 a 8": produto acima do teto vira "?" (superior, confirmar no TR), não

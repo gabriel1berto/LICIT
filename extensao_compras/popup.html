@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px system-ui, sans-serif; width: 440px; margin: 0; padding: 12px; color: #1f2328; background: #fff; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  .box { border: 1px solid #d0d7de; border-radius: 6px; padding: 8px; margin: 8px 0; }
+  .ok { color: #1a7f37; } .erro { color: #cf222e; } .aviso { color: #9a6700; }
+  button { padding: 6px 10px; margin: 4px 4px 0 0; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  #preencher { background: #1a7f37; color: #fff; border: 0; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  td, th { border-bottom: 1px solid #eee; padding: 2px 4px; text-align: left; }
+  pre { white-space: pre-wrap; max-height: 160px; overflow: auto; font-size: 11px; background: #f6f8fa; padding: 6px; }
+  label { display: block; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <h1>Preenchedor de proposta — Compras.gov.br</h1>
+  <div class="box">
+    <b>1. Pacote</b> (<code>pacote_&lt;edital&gt;.json</code> do <code>ficha_proposta.py --exportar</code>)<br>
+    <input type="file" id="arquivo" accept=".json">
+    <div id="statusPacote"></div>
+  </div>
+  <div class="box">
+    <b>2. Página</b> — abra a tela de cadastro de proposta da compra, logado.<br>
+    <button id="diagnosticar">Diagnosticar (só lê)</button>
+    <button id="simular" disabled>Simular (só lê)</button>
+  </div>
+  <div class="box">
+    <b>3. Preencher</b> — escreve nos campos e confere. <b>Não salva nem envia</b>: isso é com você.
+    <label><input type="checkbox" id="conferi"> Conferi edital, itens e valores do pacote</label>
+    <label><input type="checkbox" id="sobrescrever"> Sobrescrever campos que já têm outro valor</label>
+    <button id="preencher" disabled>Preencher</button>
+  </div>
+  <div id="saida"></div>
+  <script src="lib.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
