@@ -649,6 +649,7 @@ informática 4.340→4.249 (−91), todas as classes revisadas. 65 casos em `tes
 | `criterios.py` | Lê os critérios do item (CATMAT ou texto livre) e da ficha, compara um a um: OK / FALHA / ? (ficha não informa → vendedor confirma; nunca vira "atende") |
 | `casar.py <spreadsheet_id>` | Lê a aba "Cotação" da planilha, escolhe o melhor produto de cada fornecedor por item e escreve as abas "Cotação - GET/TS Shara/Mazer" |
 | `preco_historico.py <spreadsheet_id>` | Preço pago pelo setor público nos últimos 12 meses por item: código CATMAT (PNCP `catalogoCodigoItem`) → API de dados abertos do Compras.gov.br (`modulo-pesquisa-preco/1_consultarMaterial`, mesma base do Painel de Preços). Mediana + P25–P75 com corte de outlier (IQR), nº de compras e marcas que mais venderam. 1ª rodada: 67 de 71 itens com histórico; preço de referência do edital ficou em mediana 1,46× o preço pago |
+| `prazos_pagamento.py <spreadsheet_id>` | Lê dos documentos do edital (mesma extração do `analisa_edital.py`) prazo de entrega, recebimento definitivo e prazo de pagamento; grava "Data estimada de pagamento" = encerramento + 5 dias úteis (empenho, premissa) + entrega + recebimento + pagamento. Prazo que o edital não diz vira premissa escrita na célula. 1ª rodada: pagamentos entre 31/12/2026 e 26/02/2027 |
 
 Saída em `cotacao_informatica/dados/` (gitignorado). Pausa de 1s entre requisições.
 
