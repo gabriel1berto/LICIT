@@ -663,13 +663,17 @@ Regras de uso e travas: CLAUDE.md §19.
 |---|---|
 | `manifest.json` | Permissões mínimas: `activeTab`, `scripting`, `storage`; hosts `cnetmobile.estaleiro.serpro.gov.br`, `*.compras.gov.br`, `www.comprasnet.gov.br`. Sem content script automático — só injeta quando você clica |
 | `lib.js` | Funções puras (sem DOM): verificação do pacote (checksum, expiração, consistência), identificação da página (id da compra na URL ou UASG + nº/ano no texto), rótulo → campo, plano de preenchimento, conferência de leitura de volta |
-| `content.js` | Acha os campos por rótulo (label/span/placeholder) e liga cada um ao item pelo menor bloco que cita um único "Item N". Ações: Diagnosticar e Simular (só leem), Preencher (digita via `insertText`, cai pro setter nativo se a máscara não aceitar, lê de volta, contorna verde/vermelho). Não contém nenhum clique |
+| `content.js` | Acha os campos primeiro por `data-test` da tela real (`input-valor-proposta`, `input-marca-fabricante`, `input-modelo-versao`), depois por rótulo (label/span/placeholder); liga cada um ao item pelo menor bloco com um único `<app-identificacao-item>` (fallback: texto "Item N"). Ações: Diagnosticar e Simular (só leem), Preencher (digita via `insertText`, cai pro setter nativo se a máscara não aceitar, lê de volta, contorna verde/vermelho). Não contém nenhum clique |
 | `popup.html` / `popup.js` | Carrega o pacote, mostra itens/valores, botões, checkbox "Conferi" obrigatório pra liberar Preencher, botão "Copiar diagnóstico" |
 
 Instalar: `chrome://extensions` → Modo do desenvolvedor → Carregar sem compactação → pasta `extensao_compras/`.
 
+`tools/sondar_compras.js`: snippet de console que testa o caminho busca → "Acompanhar compra" → tela de proposta
+(sem aceitar termo nem preencher). Travas do caminho: CLAUDE.md §19.
+
 Testes: `node --test extensao_compras/test/lib.test.js` (17 — inclui checksum calculado pelo Python batendo
-com o JS) e `python -m pytest -p no:dash extensao_compras/test/test_content_fixture.py` (16 — Chromium real
+com o JS) e `python -m pytest -p no:dash extensao_compras/test/test_content_fixture.py` (18, incluindo a estrutura
+da tela real com `data-test` — Chromium real
 contra `test/fixture_proposta.html`, layout **simulado** com máscara de moeda e botões Salvar/Enviar-armadilha;
 prova que não clica, não chuta campo sem vínculo forte, recusa maior desconto / valor total / página com
 várias compras / reinjeção). Checagem de mutação 20/nov/2026: cada trava desligada derruba ≥1 teste (a de

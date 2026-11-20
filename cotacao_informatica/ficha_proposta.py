@@ -227,8 +227,9 @@ def checklist_f0(f: dict) -> list[str]:
                           f"VALOR MÍNIMO R$ {it['valor_minimo']:.2f} · marca {it['marca']} · modelo {it['modelo']}")
     linhas += ["ANTES de digitar: conferir no edital se o lance é por VALOR UNITÁRIO. Se for por valor total "
                "ou maior desconto, os valores desta ficha NÃO servem (são unitários em R$).",
-               "Depois de salvar, reabrir a proposta e conferir cada VALOR MÍNIMO contra esta ficha "
-               "(dígito a dígito — vírgula no lugar errado manda o robô ao chão).",
+               "Depois de salvar, reabrir a proposta e conferir valor unitário, marca e modelo contra esta ficha.",
+               "VALOR MÍNIMO: a tela de proposta da dispensa NÃO tem esse campo — configurar o piso onde o "
+               "sistema pedir (sala de disputa), dígito a dígito (vírgula no lugar errado manda o robô ao chão).",
                "Modo aberto-fechado: alguém online na sessão pro lance final fechado (robô não cobre).",
                "Ficar de olho no chat do pregoeiro (pedido de proposta ajustada / documentos com prazo)."]
     return linhas

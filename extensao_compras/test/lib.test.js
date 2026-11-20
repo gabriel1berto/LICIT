@@ -92,7 +92,7 @@ test("planejar: preenche o que achou, avisa valor mínimo ausente, recusa campo 
   ];
   const { plano, avisos } = L.planejar(PACOTE, tela);
   assert.deepEqual(plano.map((p) => `${p.campo}=${p.valor}`), ["valor_inicial=3.599,00", "marca=GET"]);
-  assert.match(avisos.join("|"), /VALOR MÍNIMO não achado/);
+  assert.match(avisos.join("|"), /sem campo de valor mínimo/);
   assert.match(avisos.join("|"), /2 campos "modelo"/);
 });
 

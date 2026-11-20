@@ -54,9 +54,17 @@
     return null;
   }
 
-  /** Menor ancestral cujo texto cita exatamente um nº de item. */
+  /** Nº do item do campo: menor ancestral que contém exatamente UM componente
+   *  <app-identificacao-item> do Compras.gov.br (texto "1 PROJETOR MULTIMÍDIA", sem a palavra
+   *  "Item" — visto na tela real cadastro-propostas, 20/nov/2026); fallback: texto com um único "Item N". */
   function itemDoCampo(el) {
     for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      const ids = a.querySelectorAll("app-identificacao-item");
+      if (ids.length > 1) return null; // bloco com mais de um item: ambíguo
+      if (ids.length === 1) {
+        const m = /^\s*(\d{1,4})\b/.exec(ids[0].innerText || "");
+        return m ? String(Number(m[1])) : null;
+      }
       const n = L.itemUnico(a.innerText || "");
       if (n) return n;
       if ((a.innerText || "").length > 20000) break;
@@ -64,9 +72,30 @@
     return null;
   }
 
+  // Identificadores estáveis da tela real cadastro-propostas (Compras.gov.br, vistos em 20/nov/2026).
+  // "Marca/Fabricante" é UM campo só: recebe a marca (o pacote usa fabricante = marca).
+  const DATA_TEST = {
+    "input-valor-proposta": "valor_inicial",
+    "input-marca-fabricante": "marca",
+    "input-modelo-versao": "modelo",
+  };
+
   function mapearCampos() {
     const refs = [], campos = [], semItem = [];
     const usados = new Set();
+    // 1º: data-test (mais confiável que rótulo)
+    for (const [dt, campo] of Object.entries(DATA_TEST)) {
+      for (const input of document.querySelectorAll(`[data-test="${dt}"]`)) {
+        if (!EDITAVEL(input)) continue;
+        usados.add(input);
+        const item = itemDoCampo(input);
+        const info = { campo, rotulo: `(data-test ${dt})`, seletor: seletor(input), valorAtual: input.value };
+        if (!item) { semItem.push(info); continue; }
+        refs.push(input);
+        campos.push({ ...info, item, ref: refs.length - 1 });
+      }
+    }
+    // 2º: rótulo visível
     for (const el of document.querySelectorAll("label, span, div, td, th, p, mat-label, strong, b")) {
       if (!VISIVEL(el)) continue;
       const rotulo = textoProprio(el) || el.getAttribute("aria-label") || "";

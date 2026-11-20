@@ -158,7 +158,9 @@
         const c = achados.get(`${num}|${campo}`);
         if (c === null) continue;
         if (!c) {
-          if (campo === "valor_minimo") avisos.push(`item ${num}: campo VALOR MÍNIMO não achado — preencher à mão (regra F0)`);
+          // A tela de proposta da dispensa no Compras.gov.br NÃO tem valor mínimo (vista 20/nov/2026):
+          // o piso do robô é configurado em outro momento — lembrar o usuário, não é erro de mapeamento.
+          if (campo === "valor_minimo") avisos.push(`item ${num}: sem campo de valor mínimo nesta tela — configure o piso R$ ${formatarBRL(it.valor_minimo)} onde o sistema pedir (sala de disputa)`);
           else if (campo !== "fabricante") avisos.push(`item ${num}: campo ${campo} não achado`);
           continue;
         }

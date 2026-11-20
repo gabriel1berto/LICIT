@@ -456,8 +456,11 @@ automático item x catálogo: `cotacao_informatica/` (detalhe técnico em `READM
 
 **Proposta e lances no Compras.gov.br (F0, fixada 20/nov/2026):** 58 de 60 dispensas de informática
 da semana 23-29/nov rodam no Compras.gov.br, que tem robô de lances nativo e gratuito (IN 67/2021
-dispensa · IN 73/2022 pregão). Regra: **toda proposta lá sai com o campo "Valor mínimo" preenchido**
-com o piso da ficha (F1); valor inicial = preço de referência do edital. Piso = COGS UN (fórmula §5,
+dispensa · IN 73/2022 pregão). Regra: o piso da ficha (F1) vira o "valor mínimo" do robô; valor inicial =
+preço de referência do edital. **Correção 20/nov/2026 (tela real vista):** a tela "Cadastrar propostas" da
+dispensa (`cnetmobile…/seguro/fornecedor/cadastro-propostas?compra=<id>`) só tem Valor unitário (R$),
+Marca/Fabricante (campo único) e Modelo/Versão — **não tem valor mínimo**. Onde o piso é configurado (sala de
+disputa?) ainda não foi visto — confirmar na 1ª sessão real e registrar aqui. Piso = COGS UN (fórmula §5,
 imposto 6%) × (1 + margem mínima — ver "Margens" abaixo), arredondado pra cima no
 centavo. Piso acima da referência = item inviável, não entra. Robô nativo não cobre a etapa fechada
 (modo aberto-fechado): lance final é manual, alguém online na sessão. Nada de robô de terceiro,
@@ -490,8 +493,25 @@ referência/quantidade nunca é preenchido; dois campos iguais pro mesmo item = 
 não sobrescreve campo já preenchido sem marcar a opção; confere tudo lendo a tela de volta e marca
 verde/vermelho; campo "valor mínimo" não achado vira aviso pra preencher à mão. O checksum do pacote
 protege contra edição acidental, não contra quem tem acesso à máquina (qualquer um recalcula SHA-256).
-**Status: testada só em página simulada — o DOM real do Compras.gov.br ainda não foi visto.**
-Antes do 1º uso real, rodar "Diagnosticar" na tela de proposta (logado) e calibrar os rótulos.
+**Calibrada na tela real (20/nov/2026, Dispensa 202/2026 UASG 791190):** campos achados por `data-test`
+(`input-valor-proposta`, `input-marca-fabricante`, `input-modelo-versao`) e nº do item pelo componente
+`app-identificacao-item` — os 3 campos mapeados certos no item 1. **Preenchimento real ainda não testado**
+(nenhuma proposta cadastrada até agora — falta 1ª dispensa com preço GET).
+
+**Caminho no Compras.gov.br — travas vistas em 10 dispensas reais (20/nov/2026):**
+1. Entrada só pelo menu: Área de Trabalho → Compras → "Licitação e Dispensa (novo)" → Todas as compras →
+   busca por UASG → "Acompanhar compra". Link direto pra `cadastro-propostas?compra=<id>` dá "acesso não
+   autorizado". Snippet que automatiza a busca: `extensao_compras/tools/sondar_compras.js`.
+2. Campos de proposta só aparecem **depois do aceite do Termo** (por compra). **Aceitar o termo já registra
+   participação** (a compra vai pra "Minhas participações") — só aceitar em compra que vamos disputar.
+3. Declaração ME/EPP só aparece em dispensa exclusiva ME/EPP (1 de 10). Autorização do usuário (20/nov/2026):
+   marcar "Sim" na declaração ME/EPP padrão (LC 123 art. 3º) e no Termo de Aceitação padrão (condições de
+   participação, habilitação, reserva PcD/aprendiz, art. 7º XXXIII) — texto diferente disso: consultar antes.
+4. Itens paginados de 10 em 10: a extensão só enxerga a página aberta — rodar uma vez por página.
+5. **Ler o aviso (PDF) antes de cotar:** o resumo do PNCP corta a especificação. Caso real 202/2026: PNCP dizia
+   "projetor interativo"; o aviso pede Epson PowerLite L210-SF laser/curta distância — GET não atende.
+6. Lances na dispensa: das 08h às 18h do dia da sessão, encerramento fixo, valor unitário, intervalo do aviso
+   (ex. R$ 0,50). Valor mínimo automático só "se disponibilizado no sistema" — não estava na tela.
 
 **Ponto aberto de fórmula (revisão 20/nov/2026, NÃO alterado — decisão do usuário, regra §5):** o imposto
 de 6% da §5 incide sobre o preço de **compra**; no Simples Nacional o imposto incide sobre a **venda**
