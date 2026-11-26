@@ -117,13 +117,12 @@ if so_info:
 st.caption(f"{len(editais)} de {_total} editais abertos/futuros na base" +
            (" têm item de informática." if so_info else "."))
 
-# Filtro padrão ao abrir (26/nov/2026, mesmo do radar de pneu): BA/CE/RS, Dispensa,
-# portal grátis, CAPAG A+/A. Substitui o default "Nordeste" (que escondia RS). Só na
+# Filtro padrão ao abrir (26/nov/2026, igual em todos os radares): Dispensa, portal grátis
+# ou não identificado, CAPAG A+/A. Substitui o default "Nordeste". Só na
 # 1ª carga da sessão — setdefault no session_state, não default= no widget.
 _mods = sorted(editais["modalidade_licitacao_nome"].dropna().unique())
-st.session_state.setdefault("uf_radar_info", [u for u in ["BA", "CE", "RS"] if u in set(editais["uf"])])
 st.session_state.setdefault("mod_radar_info", [m for m in _mods if "dispensa" in m.lower()])
-st.session_state.setdefault("custo_radar_info", ["Grátis"])
+st.session_state.setdefault("custo_radar_info", ["Grátis", "Não identificado"])
 st.session_state.setdefault("capag_radar_info", ["🟢 A+/A"])
 
 c1, c2, c4 = st.columns(3)

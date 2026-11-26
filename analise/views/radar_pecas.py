@@ -100,10 +100,9 @@ if editais.empty:
 
 editais["regiao"] = editais["uf"].map(REGIAO_POR_UF)
 
-# Filtro padrão ao abrir (26/nov/2026, mesmo do radar de pneu): BA/CE/RS + Dispensa.
+# Filtro padrão ao abrir (26/nov/2026, igual em todos os radares): Dispensa.
 # Portal e CAPAG ficam de fora — a base de peças não tem link do portal nem codigo_ibge.
 _mods = sorted(editais["modalidade_licitacao_nome"].dropna().unique())
-st.session_state.setdefault("uf_radar_pecas", [u for u in ["BA", "CE", "RS"] if u in set(editais["uf"])])
 st.session_state.setdefault("mod_radar_pecas", [m for m in _mods if "dispensa" in m.lower()])
 
 col_reg, col_uf, col_mod, col_tipo, col_termo = st.columns(5)
