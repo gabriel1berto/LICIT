@@ -21,3 +21,6 @@ lista_negociacao_*.csv
 tabela_medida_estado_qtd_criterio.csv
 debug_*
 cotacao_master/debug_*
+
+# resumo de catálogo pro dashboard (sem dado sensível) — ver cotacao_informatica/snapshot_fornecedores.py
+!analise/assets/*.json

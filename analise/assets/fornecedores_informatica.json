@@ -1,0 +1,206 @@
+{
+ "gerado_em": "2026-11-26",
+ "fornecedores": [
+  {
+   "fornecedor": "GET",
+   "site": "app.ibyte.com.br",
+   "catalogo_em": "2026-11-19",
+   "produtos": 183,
+   "categorias": {
+    "Computador": {
+     "produtos": 50,
+     "marcas": [
+      "GET"
+     ]
+    },
+    "Armazenamento": {
+     "produtos": 39,
+     "marcas": [
+      "GET"
+     ]
+    },
+    "Teclado/Mouse": {
+     "produtos": 37,
+     "marcas": [
+      "GET"
+     ]
+    },
+    "Monitor": {
+     "produtos": 18,
+     "marcas": [
+      "GET"
+     ]
+    },
+    "Headset/Fone": {
+     "produtos": 15,
+     "marcas": [
+      "GET"
+     ]
+    },
+    "Caixa de som": {
+     "produtos": 10,
+     "marcas": [
+      "GET"
+     ]
+    },
+    "Nobreak": {
+     "produtos": 8,
+     "marcas": [
+      "GET"
+     ]
+    },
+    "Projetor": {
+     "produtos": 5,
+     "marcas": [
+      "GET"
+     ]
+    },
+    "Tablet": {
+     "produtos": 1,
+     "marcas": [
+      "GET"
+     ]
+    }
+   }
+  },
+  {
+   "fornecedor": "TS Shara",
+   "site": "tsshara.com.br",
+   "catalogo_em": "2026-11-19",
+   "produtos": 355,
+   "categorias": {
+    "Nobreak": {
+     "produtos": 286,
+     "marcas": [
+      "TS SHARA"
+     ]
+    },
+    "Estabilizador": {
+     "produtos": 69,
+     "marcas": [
+      "TS SHARA"
+     ]
+    }
+   }
+  },
+  {
+   "fornecedor": "Mazer",
+   "site": "www.mazer.com.br",
+   "catalogo_em": "2026-11-19",
+   "produtos": 646,
+   "categorias": {
+    "Armazenamento": {
+     "produtos": 217,
+     "marcas": [
+      "KINGSTON",
+      "SANDISK",
+      "ADATA",
+      "PATRIOT",
+      "LEXAR"
+     ]
+    },
+    "Nobreak": {
+     "produtos": 153,
+     "marcas": [
+      "INTELBRAS",
+      "APC",
+      "SMS",
+      "TS SHARA",
+      "COLETEK"
+     ]
+    },
+    "Monitor": {
+     "produtos": 81,
+     "marcas": [
+      "SAMSUNG",
+      "AOC",
+      "PHILIPS",
+      "LG",
+      "LENOVO"
+     ]
+    },
+    "Headset/Fone": {
+     "produtos": 38,
+     "marcas": [
+      "C3 TECH",
+      "LOGITECH",
+      "ASTRO"
+     ]
+    },
+    "Teclado/Mouse": {
+     "produtos": 32,
+     "marcas": [
+      "LOGITECH",
+      "C3 TECH",
+      "INTELBRAS",
+      "LENOVO"
+     ]
+    },
+    "Notebook": {
+     "produtos": 25,
+     "marcas": [
+      "LENOVO",
+      "ACER",
+      "HP"
+     ]
+    },
+    "Impressora": {
+     "produtos": 23,
+     "marcas": [
+      "HP",
+      "EPSON"
+     ]
+    },
+    "Estabilizador": {
+     "produtos": 20,
+     "marcas": [
+      "SMS",
+      "COLETEK",
+      "TS SHARA"
+     ]
+    },
+    "Projetor": {
+     "produtos": 16,
+     "marcas": [
+      "BENQ",
+      "EPSON",
+      "INTELBRAS"
+     ]
+    },
+    "Webcam": {
+     "produtos": 15,
+     "marcas": [
+      "LOGITECH",
+      "INTELBRAS",
+      "C3 TECH",
+      "LENOVO"
+     ]
+    },
+    "Computador": {
+     "produtos": 14,
+     "marcas": [
+      "LENOVO",
+      "ACER",
+      "ELGIN",
+      "HP",
+      "TANCA"
+     ]
+    },
+    "Caixa de som": {
+     "produtos": 9,
+     "marcas": [
+      "C3 TECH",
+      "K-MEX",
+      "LOGITECH"
+     ]
+    },
+    "Tablet": {
+     "produtos": 3,
+     "marcas": [
+      "LENOVO"
+     ]
+    }
+   }
+  }
+ ]
+}

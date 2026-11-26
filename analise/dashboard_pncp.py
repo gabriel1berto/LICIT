@@ -46,7 +46,8 @@ pagina = st.navigation({
         st.Page("views/radar_fracassos.py", title="Desertos & Fracassos", icon="📉"),
     ],
     "📡 Radar de Fornecedor": [
-        st.Page("views/radar_fornecedor.py", title="Radar de Fornecedor", icon="📡"),
+        st.Page("views/radar_fornecedor.py", title="Pneus", icon="🛞"),
+        st.Page("views/radar_fornecedor_informatica.py", title="Informática", icon="💻"),
     ],
 })
 

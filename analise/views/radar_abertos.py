@@ -98,7 +98,30 @@ editais["custo_fornecedor"] = editais["portal_dominio"].apply(_custo_fornecedor)
 
 editais["regiao"] = editais["uf"].map(REGIAO_POR_UF)
 
-col_reg, col_uf, col_mod, col_cat, col_regime, col_portal, col_custo = st.columns(7)
+_capag_mun = carregar_capag_municipios()
+_capag_uf = carregar_capag_estados()
+MAPA_CAPAG_MUN = dict(zip(_capag_mun["codigo_ibge"], _capag_mun["capag"]))
+MAPA_CAPAG_UF = dict(zip(_capag_uf["uf"], _capag_uf["capag"]))
+# Mesmas faixas do Radar de Informática (filtro CAPAG adicionado aqui 26/nov/2026)
+FAIXAS_CAPAG = {COR_STATUS_GOOD: "🟢 A+/A", COR_STATUS_WARNING: "🟡 B+/B", COR_STATUS_CRITICAL: "🔴 C/D"}
+editais["capag_faixa"] = editais.apply(
+    lambda r: FAIXAS_CAPAG.get(
+        cor_capag(capag_do_orgao(r["codigo_ibge"], r["uf"], MAPA_CAPAG_MUN, MAPA_CAPAG_UF)[0]), "⚪ Sem dado"
+    ),
+    axis=1,
+)
+
+# Filtro padrão ao abrir (26/nov/2026, pedido do usuário): CAPAG A+/A, portal grátis,
+# BA/CE/RS (Fortaleza entra pelo CE), Dispensa. Só vale na 1ª carga da sessão — depois
+# o que o usuário mexer fica. setdefault no session_state (e não default= no widget)
+# porque a UF é reescrita via session_state logo abaixo e o Streamlit avisa se tiver os dois.
+_mods = sorted(editais["modalidade_licitacao_nome"].dropna().unique())
+st.session_state.setdefault("uf_radar", [u for u in ["BA", "CE", "RS"] if u in set(editais["uf"])])
+st.session_state.setdefault("mod_radar", [m for m in _mods if "dispensa" in m.lower()])
+st.session_state.setdefault("custo_radar", ["Grátis"])
+st.session_state.setdefault("capag_radar", ["🟢 A+/A"])
+
+col_reg, col_uf, col_mod, col_cat, col_regime, col_portal, col_custo, col_capag = st.columns(8)
 with col_reg:
     regioes_disp = [r for r in ORDEM_REGIOES if r in set(editais["regiao"].dropna())]
     reg_sel = st.multiselect("Região", regioes_disp, key="regiao_radar")
@@ -111,9 +134,7 @@ with col_uf:
         st.session_state["uf_radar"] = [u for u in st.session_state["uf_radar"] if u in ufs_disp]
     uf_sel = st.multiselect("UF", ufs_disp, key="uf_radar")
 with col_mod:
-    mod_sel = st.multiselect(
-        "Modalidade", sorted(editais["modalidade_licitacao_nome"].dropna().unique()), key="mod_radar"
-    )
+    mod_sel = st.multiselect("Modalidade", _mods, key="mod_radar")
 with col_cat:
     cats_disp = sorted({c.strip() for cs in editais["categorias"].dropna() for c in cs.split(",")})
     cat_sel = st.multiselect("Categoria de produto", cats_disp, key="cat_radar")
@@ -136,6 +157,11 @@ with col_custo:
         "comissão sobre lote vencido). 'Não identificado' = não achamos fonte "
         "confirmando cobrança ou gratuidade — não custa nada checar antes de descartar.",
     )
+with col_capag:
+    capag_sel = st.multiselect(
+        "CAPAG", ["🟢 A+/A", "🟡 B+/B", "🔴 C/D", "⚪ Sem dado"], key="capag_radar",
+        help="Nota do município do órgão; sem nota do município, cai pra nota do estado.",
+    )
 
 if reg_sel:
     editais = editais[editais["regiao"].isin(reg_sel)]
@@ -151,17 +177,14 @@ if portal_sel:
     editais = editais[editais["portal"].isin(portal_sel)]
 if custo_sel:
     editais = editais[editais["custo_fornecedor"].isin(custo_sel)]
+if capag_sel:
+    editais = editais[editais["capag_faixa"].isin(capag_sel)]
 
 if editais.empty:
     st.warning("Nenhum edital aberto bate esses filtros.")
     st.stop()
 
 st.caption(f"{len(editais)} edital(is) aberto(s) com item de pneu, nesse filtro.")
-
-_capag_mun = carregar_capag_municipios()
-_capag_uf = carregar_capag_estados()
-MAPA_CAPAG_MUN = dict(zip(_capag_mun["codigo_ibge"], _capag_mun["capag"]))
-MAPA_CAPAG_UF = dict(zip(_capag_uf["uf"], _capag_uf["capag"]))
 
 # Status (não categórico) — cor reservada de urgência, sempre com ícone+label junto
 # (skill dataviz, "status color nunca sozinha"). Bucket mais perto de 0 = mais crítico.
