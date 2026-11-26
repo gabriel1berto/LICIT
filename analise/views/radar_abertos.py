@@ -28,7 +28,7 @@ MULTIPLICADOR_PRECO_VENDA = 1.348
 
 WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
-st.title("🗂️ Radar de Editais")
+st.title("🛞 Radar de Pneus")
 
 _ultima_carga = carregar_ultima_carga_detalhes()
 if _ultima_carga is not None:

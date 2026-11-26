@@ -2,7 +2,8 @@
 """
 dashboard_pncp.py — Entrypoint do dashboard (Streamlit multi-page nativo).
 
-4 grupos de página, propósitos diferentes:
+Grupos de página (26/nov/2026: Pneus, Informática, Peças e Desertos juntos
+em "Radar de Editais"):
   - "Mercado PNCP": dado público de mercado nacional (editais de terceiro),
     sidebar com filtro de UF/período/categoria/regime.
   - "Radar de Editais": Kanban só-leitura dos editais com pneu ainda com
@@ -36,18 +37,16 @@ pagina = st.navigation({
         st.Page("views/mercado_produto.py", title="Produto", icon="📦"),
         st.Page("views/mercado_sazonalidade.py", title="Sazonalidade", icon="📅"),
     ],
+    # 26/nov/2026: Pneus, Informática, Peças e Desertos num grupo só. URLs não
+    # mudam (Streamlit deriva do nome do arquivo: /radar_abertos, /radar_pecas...).
     "🗂️ Radar de Editais": [
-        st.Page("views/radar_abertos.py", title="Editais Abertos", icon="🗂️"),
+        st.Page("views/radar_abertos.py", title="Pneus", icon="🛞"),
+        st.Page("views/radar_informatica.py", title="Informática", icon="💻"),
+        st.Page("views/radar_pecas.py", title="Peças", icon="🔧"),
         st.Page("views/radar_fracassos.py", title="Desertos & Fracassos", icon="📉"),
     ],
     "📡 Radar de Fornecedor": [
         st.Page("views/radar_fornecedor.py", title="Radar de Fornecedor", icon="📡"),
-    ],
-    "🔧 Peças Automotivas": [
-        st.Page("views/radar_pecas.py", title="Editais Abertos", icon="🔧"),
-    ],
-    "💻 Informática": [
-        st.Page("views/radar_informatica.py", title="Editais Abertos", icon="💻"),
     ],
 })
 
