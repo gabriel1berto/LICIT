@@ -111,15 +111,12 @@ editais["capag_faixa"] = editais.apply(
     axis=1,
 )
 
-# Filtro padrão ao abrir (26/nov/2026, pedido do usuário): CAPAG A+/A, portal grátis,
-# BA/CE/RS (Fortaleza entra pelo CE), Dispensa. Só vale na 1ª carga da sessão — depois
-# o que o usuário mexer fica. setdefault no session_state (e não default= no widget)
-# porque a UF é reescrita via session_state logo abaixo e o Streamlit avisa se tiver os dois.
+# Filtro padrão ao abrir (26/nov/2026, pedido do usuário): Dispensa + portal grátis ou
+# não identificado. Sem UF/CAPAG pré-marcados no pneu (diferente de informática/peças).
+# Só vale na 1ª carga da sessão — setdefault no session_state, não default= no widget.
 _mods = sorted(editais["modalidade_licitacao_nome"].dropna().unique())
-st.session_state.setdefault("uf_radar", [u for u in ["BA", "CE", "RS"] if u in set(editais["uf"])])
 st.session_state.setdefault("mod_radar", [m for m in _mods if "dispensa" in m.lower()])
-st.session_state.setdefault("custo_radar", ["Grátis"])
-st.session_state.setdefault("capag_radar", ["🟢 A+/A"])
+st.session_state.setdefault("custo_radar", ["Grátis", "Não identificado"])
 
 col_reg, col_uf, col_mod, col_cat, col_regime, col_portal, col_custo, col_capag = st.columns(8)
 with col_reg:

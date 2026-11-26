@@ -100,6 +100,12 @@ if editais.empty:
 
 editais["regiao"] = editais["uf"].map(REGIAO_POR_UF)
 
+# Filtro padrão ao abrir (26/nov/2026, mesmo do radar de pneu): BA/CE/RS + Dispensa.
+# Portal e CAPAG ficam de fora — a base de peças não tem link do portal nem codigo_ibge.
+_mods = sorted(editais["modalidade_licitacao_nome"].dropna().unique())
+st.session_state.setdefault("uf_radar_pecas", [u for u in ["BA", "CE", "RS"] if u in set(editais["uf"])])
+st.session_state.setdefault("mod_radar_pecas", [m for m in _mods if "dispensa" in m.lower()])
+
 col_reg, col_uf, col_mod, col_tipo, col_termo = st.columns(5)
 with col_reg:
     regioes_disp = [r for r in ORDEM_REGIOES if r in set(editais["regiao"].dropna())]
@@ -113,9 +119,7 @@ with col_uf:
         st.session_state["uf_radar_pecas"] = [u for u in st.session_state["uf_radar_pecas"] if u in ufs_disp]
     uf_sel = st.multiselect("UF", ufs_disp, key="uf_radar_pecas")
 with col_mod:
-    mod_sel = st.multiselect(
-        "Modalidade", sorted(editais["modalidade_licitacao_nome"].dropna().unique()), key="mod_radar_pecas"
-    )
+    mod_sel = st.multiselect("Modalidade", _mods, key="mod_radar_pecas")
 with col_tipo:
     tipo_sel = st.multiselect(
         "Tipo (pelo objeto)", sorted(editais["tipo_objeto"].dropna().unique()), key="tipo_radar_pecas",

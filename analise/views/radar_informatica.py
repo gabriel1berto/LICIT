@@ -117,12 +117,19 @@ if so_info:
 st.caption(f"{len(editais)} de {_total} editais abertos/futuros na base" +
            (" têm item de informática." if so_info else "."))
 
+# Filtro padrão ao abrir (26/nov/2026, mesmo do radar de pneu): BA/CE/RS, Dispensa,
+# portal grátis, CAPAG A+/A. Substitui o default "Nordeste" (que escondia RS). Só na
+# 1ª carga da sessão — setdefault no session_state, não default= no widget.
+_mods = sorted(editais["modalidade_licitacao_nome"].dropna().unique())
+st.session_state.setdefault("uf_radar_info", [u for u in ["BA", "CE", "RS"] if u in set(editais["uf"])])
+st.session_state.setdefault("mod_radar_info", [m for m in _mods if "dispensa" in m.lower()])
+st.session_state.setdefault("custo_radar_info", ["Grátis"])
+st.session_state.setdefault("capag_radar_info", ["🟢 A+/A"])
+
 c1, c2, c4 = st.columns(3)
 with c1:
     regioes_disp = [r for r in ORDEM_REGIOES if r in set(editais["regiao"].dropna())]
-    reg_sel = st.multiselect(
-        "Região", regioes_disp, default=[r for r in ["Nordeste"] if r in regioes_disp], key="regiao_radar_info"
-    )
+    reg_sel = st.multiselect("Região", regioes_disp, key="regiao_radar_info")
 with c2:
     ufs_disp = editais.loc[editais["regiao"].isin(reg_sel), "uf"] if reg_sel else editais["uf"]
     ufs_disp = sorted(ufs_disp.dropna().unique())
@@ -135,9 +142,7 @@ with c4:
 
 c5, c6, c7, c8, c9 = st.columns(5)
 with c5:
-    mod_sel = st.multiselect(
-        "Modalidade", sorted(editais["modalidade_licitacao_nome"].dropna().unique()), key="mod_radar_info"
-    )
+    mod_sel = st.multiselect("Modalidade", _mods, key="mod_radar_info")
 with c6:
     regime_sel = st.multiselect(
         "Regime", sorted(editais["regime"].dropna().unique()), key="regime_radar_info",
