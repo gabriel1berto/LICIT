@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Página — Radar de Informática: editais ABERTOS e FUTUROS com periférico de
-informática, foco em fornecer 100% pela GET (19/nov/2026, pedido do usuário: "tal qual
-o radar de pneus, mesmos critérios e mapa").
+informática (19/nov/2026, pedido do usuário: "tal qual o radar de pneus, mesmos
+critérios e mapa"). Selo GET retirado 26/nov/2026 a pedido do usuário — cobertura por
+distribuidor agora vive em radar_fornecedor_informatica.py.
 
 Igual ao radar de pneu (`radar_abertos.py`): filtros Região/UF/Modalidade/Categoria/
 Regime/Portal/Custo, mapa por urgência, CAPAG, Kanban por dia de encerramento.
 Diferenças deliberadas:
-  - Selo GET por edital (🟢 100% GET / 🟡 Parcial / ⚪ Fora) no lugar do funil
-    "meu preço x histórico" — GET cota por WhatsApp, não existe preço nosso na base.
   - Prazo vem de `data_fim_vigencia` do search API (mesmo proxy do radar de Peças) —
     teto de 45 dias no Kanban, resto em "Vigência longa" (provável ata/credenciamento).
   - Inclui edital FUTURO (abertura de proposta ainda não chegou), marcado 🔜.
@@ -19,7 +18,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from conectar_informatica import SELO_PENDENTE, carregar_editais_informatica, carregar_itens_informatica
+from conectar_informatica import carregar_editais_informatica, carregar_itens_informatica
 from dashboard_common import (
     COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING, ORDEM_REGIOES, REGIAO_POR_UF,
     capag_do_orgao, carregar_capag_estados, carregar_capag_municipios, carregar_lat_lon, cor_capag,
@@ -31,16 +30,6 @@ WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 TETO_DIAS_KANBAN = 45
 MAX_CARDS_POR_COLUNA = 8
 
-SELOS = [
-    ("100% GET", "🟢"),
-    ("Parcial GET", "🟡"),
-    ("Fora da GET", "⚪"),
-    ("Sem item de informática", "▫️"),
-    (SELO_PENDENTE, "⏳"),
-]
-ICONE_SELO = dict(SELOS)
-ORDEM_SELO = {s: i for i, (s, _) in enumerate(SELOS)}
-ICONE_COB = {"sim": "✅", "talvez": "❔", "nao": "❌"}
 
 
 @st.cache_data(ttl=300)
@@ -52,13 +41,12 @@ def _carregar() -> tuple[pd.DataFrame, pd.DataFrame]:
 st.title("💻 Radar de Informática")
 
 cabecalho_pagina(
-    pergunta="Quais editais de periférico de informática estão abertos (ou vão abrir), e "
-    "quais dá pra atender 100% com produto GET?",
+    pergunta="Quais editais de periférico de informática estão abertos (ou vão abrir)?",
     fonte="Busca direta na API do PNCP + itens de cada edital (`analise/coletor_informatica.py`), "
-    "schema `informatica` — isolado do dado de pneu/onco/peças. Catálogo GET de 19/nov/2026.",
+    "schema `informatica` — isolado do dado de pneu/onco/peças.",
 )
 
-with regra("ℹ️ Como o selo GET e o 'aberto' são decididos"):
+with regra("ℹ️ Como o 'aberto' e o item de informática são decididos"):
     st.markdown(
         "**Aberto/futuro:** busca do PNCP com status *recebendo proposta*, situação "
         "'Divulgada no PNCP', não cancelado, não Leilão, prazo no futuro. 🔜 = abertura de "
@@ -67,14 +55,6 @@ with regra("ℹ️ Como o selo GET e o 'aberto' são decididos"):
         "(nobreak, monitor, teclado, mouse, headset, projetor, SSD, computador...). Serviço, "
         "locação, toner, bateria avulsa, suporte, monitor médico ficam de fora "
         "(`filtro_informatica.py`).\n\n"
-        "**Cobertura GET por item:** ✅ sim (linha existe e spec cabe — nobreak até 3.000VA, "
-        "monitor 15-27\", teclado/mouse, headset, projetor, SSD/pendrive/memória, caixa de "
-        "som de PC) · ❔ talvez (computador/tablet, ou descrição sem VA/polegada) · ❌ não "
-        "(notebook, impressora, webcam, estabilizador, nobreak > 3kVA, monitor > 27\").\n\n"
-        "**Selo do edital:** 🟢 100% GET = todo item de informática é ✅ ou ❔ · 🟡 Parcial · "
-        "⚪ Fora · ⏳ itens ainda não coletados.\n\n"
-        "⚠️ **Nobreak GET é quase todo saída 115V** (só o 3000VA é 220/220V). TR que exige "
-        "saída 220V elimina o item — confirmar no TR e com a GET antes de cotar.\n\n"
         "**Prazo:** `data_fim_vigencia` do search API (fase 1). Em SRP/credenciamento pode ser "
         "vigência de ata — por isso >45 dias vai pra coluna 'Vigência longa'.\n\n"
         "**CAPAG:** mesma regra do radar de pneu (município, senão estado). Risco de "
@@ -226,7 +206,6 @@ mapa_df = mapa_df.dropna(subset=["latitude", "longitude"])
 if mapa_df.empty:
     st.info("Sem coordenada de município pra mostrar no mapa nesse filtro.")
 else:
-    mapa_df["selo_label"] = mapa_df["selo"].map(lambda s: f"{ICONE_SELO.get(s, '')} {s}")
     zoom = max(3.0, 8.5 - 1.4 * max(
         mapa_df["latitude"].max() - mapa_df["latitude"].min(),
         mapa_df["longitude"].max() - mapa_df["longitude"].min(),
@@ -237,7 +216,7 @@ else:
         category_orders={"bucket_label": list(CORES_BUCKET)},
         color_discrete_map=CORES_BUCKET,
         hover_name="orgao_nome",
-        hover_data={"municipio": True, "uf": True, "dias_restantes": ":.1f", "selo_label": True,
+        hover_data={"municipio": True, "uf": True, "dias_restantes": ":.1f",
                     "categorias": True, "latitude": False, "longitude": False},
         center={"lat": mapa_df["latitude"].mean(), "lon": mapa_df["longitude"].mean()},
         zoom=zoom, map_style="carto-darkmatter",
@@ -250,8 +229,7 @@ else:
 st.divider()
 
 contagem_orgao = editais["orgao_nome"].value_counts()
-editais["_ordem_selo"] = editais["selo"].map(ORDEM_SELO).fillna(99)
-editais = editais.sort_values(["_ordem_selo", "valor_get", "dias_restantes"], ascending=[True, False, True])
+editais = editais.sort_values(["dias_restantes", "valor_info"], ascending=[True, False])
 editais["data_dia"] = editais["data_fim_vigencia"].dt.date
 editais_kanban = editais[editais["dias_restantes"] <= TETO_DIAS_KANBAN]
 editais_longa = editais[editais["dias_restantes"] > TETO_DIAS_KANBAN]
@@ -296,7 +274,6 @@ def _render_card(row: pd.Series, cor: str) -> None:
             st.caption(f"🔜 Abre proposta em {row['data_inicio_vigencia']:%d/%m %H:%M}")
         orgao = row["orgao_nome"] + (" 🔁" if contagem_orgao.get(row["orgao_nome"], 0) > 1 else "")
         st.caption(f"**{orgao}** — {row['municipio']}/{row['uf']}")
-        st.caption(f"**{ICONE_SELO.get(row['selo'], '')} {row['selo']}**")
         nota, origem = row["capag"], row["capag_origem"]
         if nota:
             c = cor_capag(nota)
@@ -307,7 +284,7 @@ def _render_card(row: pd.Series, cor: str) -> None:
         if row["n_itens_info"]:
             st.caption(row["categorias"])
             if row["valor_info"] > 0:
-                st.caption(f"Informática: R$ {fmt_abrev(row['valor_info'])} · GET: R$ {fmt_abrev(row['valor_get'])}")
+                st.caption(f"Informática: R$ {fmt_abrev(row['valor_info'])}")
             else:
                 st.caption("Sem valor estimado (sigiloso ou não informado)")
             if row["n_itens_info"] < row["n_itens_total"]:
@@ -321,9 +298,9 @@ def _render_card(row: pd.Series, cor: str) -> None:
                        f"encerra {row['data_fim_vigencia']:%d/%m/%Y %H:%M}")
             it = itens_por_edital.get(row["numero_controle_pncp"])
             if it is not None:
-                tab = it.assign(GET=it["cobertura_get"].map(ICONE_COB), Descrição=it["descricao"].str[:90])
+                tab = it.assign(Descrição=it["descricao"].str[:90])
                 st.dataframe(
-                    tab[["numero_item", "categoria", "GET", "quantidade", "valor_unitario_estimado", "Descrição"]],
+                    tab[["numero_item", "categoria", "quantidade", "valor_unitario_estimado", "Descrição"]],
                     hide_index=True, use_container_width=True,
                     column_config={
                         "numero_item": "Item", "categoria": "Categoria", "quantidade": "Qtde",
@@ -359,12 +336,12 @@ if not editais_longa.empty:
             _render_card(row, COR_STATUS_GOOD)
 
 st.markdown("#### Lista completa")
-st.caption(f"Todos os editais do filtro, 100% GET primeiro. O Kanban mostra só {MAX_CARDS_POR_COLUNA} por dia.")
-tabela = editais.assign(selo_label=editais["selo"].map(lambda s: f"{ICONE_SELO.get(s, '')} {s}"))
+st.caption(f"Todos os editais do filtro, o que encerra antes primeiro. O Kanban mostra só {MAX_CARDS_POR_COLUNA} por dia.")
+tabela = editais
 st.dataframe(
     tabela[[
-        "data_fim_vigencia", "dias_restantes", "futuro", "selo_label", "uf", "municipio", "orgao_nome",
-        "categorias", "n_itens_info", "valor_info", "valor_get", "modalidade_licitacao_nome", "regime",
+        "data_fim_vigencia", "dias_restantes", "futuro", "uf", "municipio", "orgao_nome",
+        "categorias", "n_itens_info", "valor_info", "modalidade_licitacao_nome", "regime",
         "portal", "objeto", "pncp_url",
     ]],
     hide_index=True,
@@ -373,11 +350,9 @@ st.dataframe(
         "data_fim_vigencia": st.column_config.DatetimeColumn("Encerra em", format="DD/MM/YYYY HH:mm"),
         "dias_restantes": st.column_config.NumberColumn("Dias", format="%.1f"),
         "futuro": st.column_config.CheckboxColumn("🔜"),
-        "selo_label": "Selo GET",
         "uf": "UF", "municipio": "Município", "orgao_nome": "Órgão", "categorias": "Categorias",
         "n_itens_info": "Itens info",
         "valor_info": st.column_config.NumberColumn("Valor informática (R$)", format="%.2f"),
-        "valor_get": st.column_config.NumberColumn("Valor GET (R$)", format="%.2f"),
         "modalidade_licitacao_nome": "Modalidade", "regime": "Regime", "portal": "Portal",
         "objeto": st.column_config.TextColumn("Objeto", width="large"),
         "pncp_url": st.column_config.LinkColumn("PNCP", display_text="Abrir"),
@@ -386,6 +361,6 @@ st.dataframe(
 
 st.divider()
 st.caption(
-    "Próximo passo de um edital 🟢: card no Notion + skill analise-de-edital, depois cotação GET "
-    "no WhatsApp (catálogo app.ibyte.com.br/get-catalog). Nenhuma escrita acontece a partir deste dashboard."
+    "Próximo passo de um edital: card no Notion + skill analise-de-edital, depois cotação com o "
+    "distribuidor (ver Radar de Fornecedor → Informática). Nenhuma escrita acontece a partir deste dashboard."
 )
