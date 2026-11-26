@@ -24,6 +24,7 @@ from dashboard_common import (
     capag_do_orgao, carregar_capag_estados, carregar_capag_municipios, carregar_lat_lon, cor_capag,
     custo_fornecedor, dominio_de, fmt_abrev, fundo_transparente, portal_de,
 )
+from fila import botoes_fila, carregar_fila, resumo_fila
 from ui_explicacao import cabecalho_pagina, regra
 
 WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -181,6 +182,8 @@ m2.metric(
     help=f"{int(_contexto['itens_coletados_em'].notna().sum())} de {len(_contexto)} editais abertos/futuros "
     "nesse filtro já tiveram os itens lidos e classificados. O resto (⏳) entra na próxima coleta.",
 )
+FILA = carregar_fila("informatica")
+resumo_fila(FILA)
 
 
 BUCKETS = [
@@ -291,6 +294,7 @@ def _render_card(row: pd.Series, cor: str) -> None:
                 st.caption(f"⚠️ {row['n_itens_info']} de {row['n_itens_total']} itens são informática")
         st.caption(f"{row['portal']} · {row['custo_fornecedor']}")
         st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)
+        botoes_fila(row, "informatica", FILA)
         with st.expander("Detalhes"):
             obj = str(row["objeto"] or "(sem objeto descrito)")
             st.caption(obj[:250] + ("…" if len(obj) > 250 else ""))

@@ -19,6 +19,7 @@ from dashboard_common import (
     cor_capag, custo_fornecedor as _custo_fornecedor, dominio_de as _dominio_de, fmt_abrev,
     fundo_transparente, portal_de as _portal_de,
 )
+from fila import botoes_fila, carregar_fila, resumo_fila
 from ui_explicacao import cabecalho_pagina, regra
 
 # CLAUDE.md §5 (revisado 17/jul/2026): Investimento + Frete 6% + Imposto 6% + margem
@@ -183,6 +184,8 @@ if editais.empty:
     st.stop()
 
 st.caption(f"{len(editais)} edital(is) aberto(s) com item de pneu, nesse filtro.")
+FILA = carregar_fila("pneu")
+resumo_fila(FILA)
 
 # Status (não categórico) — cor reservada de urgência, sempre com ícone+label junto
 # (skill dataviz, "status color nunca sozinha"). Bucket mais perto de 0 = mais crítico.
@@ -400,6 +403,7 @@ for col, dia in zip(cols, dias_lista):
                     if partes:
                         st.caption(" · ".join(partes))
                 st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)
+                botoes_fila(row, "pneu", FILA)
                 with st.expander("Detalhes"):
                     objeto = row["objeto_compra"] or "(sem objeto descrito)"
                     st.caption(objeto[:200] + ("…" if len(objeto) > 200 else ""))

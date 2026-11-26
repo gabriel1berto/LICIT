@@ -23,6 +23,7 @@ from conectar_pecas import carregar_editais_abertos_pecas
 from dashboard_common import (
     COR_STATUS_CRITICAL, COR_STATUS_GOOD, COR_STATUS_WARNING, ORDEM_REGIOES, REGIAO_POR_UF,
 )
+from fila import botoes_fila, carregar_fila, resumo_fila
 from ui_explicacao import cabecalho_pagina, regra
 
 WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -168,6 +169,8 @@ if editais.empty:
     st.stop()
 
 st.caption(f"{len(editais)} edital(is) aberto(s), nesse filtro.")
+FILA = carregar_fila("pecas")
+resumo_fila(FILA)
 
 # Mesmos 3 buckets de urgência do radar de pneu/onco — cor reservada, sempre com
 # ícone+label junto (skill dataviz, "status color nunca sozinha").
@@ -257,6 +260,7 @@ def _render_card(row: pd.Series, cor_dia: str) -> None:
         else:
             st.caption(f"R$ {valor:,.2f}".replace(",", "_").replace(".", ",").replace("_", "."))
         st.link_button("Abrir no PNCP", row["pncp_url"], use_container_width=True)
+        botoes_fila(row, "pecas", FILA)
         with st.expander("Detalhes"):
             objeto = row["titulo"] or row["descricao"] or "(sem objeto descrito)"
             st.caption(str(objeto)[:200] + ("…" if len(str(objeto)) > 200 else ""))
