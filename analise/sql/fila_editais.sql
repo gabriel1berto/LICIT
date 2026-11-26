@@ -1,5 +1,5 @@
 -- Fila de editais marcados no dashboard (26/nov/2026). O dashboard só grava a marcação;
--- a leitura do TR e a ficha acontecem no Claude Code (/licit-fila), que preenche ficha/lido_em.
+-- a leitura do TR acontece no Claude Code (/licit-fila); a ficha vai pra fila.fichas (fichas_edital.sql).
 CREATE SCHEMA IF NOT EXISTS fila;
 
 CREATE TABLE IF NOT EXISTS fila.editais (
@@ -14,6 +14,5 @@ CREATE TABLE IF NOT EXISTS fila.editais (
     marcado_em           timestamptz NOT NULL DEFAULT now(),
     ler_pedido_em        timestamptz,
     lido_em              timestamptz,
-    ficha                jsonb,
     observacao           text
 );

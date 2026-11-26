@@ -4,7 +4,8 @@
 O dashboard SÓ grava a marcação em fila.editais (ver sql/fila_editais.sql). Nenhum botão
 daqui lê PDF, chama Claude ou escreve no Notion — isso continua fora do dashboard: a
 leitura do TR e a ficha do edital rodam no Claude Code (/licit-fila), que lê os pedidos
-com status 'na_fila' e grava ficha/lido_em/status='lido' de volta.
+com status 'na_fila' e grava a ficha (fila.fichas/ficha_itens/ficha_documentos, via
+gravar_ficha.py) e status='lido' de volta. A ficha aparece na página 📋 Fichas.
 
 Botões ficam abertos (sem senha), decisão do usuário: o pior caso é alguém marcar ou
 desmarcar edital — nada é lido sem o comando no Claude Code.
